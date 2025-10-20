@@ -97,7 +97,7 @@ void readBoard(int result[], int *pPassant, int castles[4], const Board *pBoard)
             }
         }
     }
-    *pPassant = pBoard->enPassant;
+    *pPassant = __builtin_ctzll(pBoard->enPassant);
 
     for (int i = 0; i < 4; i++) {
         if (pBoard->castle & 1ULL << i) {
