@@ -3,10 +3,10 @@
 //
 #include <assert.h>
 
-#include "../include/_globals.h"
+#include "../include/transpositionTable.h"
 #include "../include/moveFunctions.h"
-#include "../include/_evaluators.h"
-#include "../include/_zobristHashing.h"
+#include "../include/boardEvaluation.h"
+#include "../include/zobristHashing.h"
 
 
 bool canBeAttacked(uint64_t position, const Board* board, const int color) {

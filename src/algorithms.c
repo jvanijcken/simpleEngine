@@ -12,7 +12,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "../include/_globals.h"
+#include "../include/transpositionTable.h"
 #include "../include/moveGeneration.h"
 
 bool UNWIND = true;

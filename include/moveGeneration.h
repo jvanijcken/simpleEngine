@@ -5,7 +5,7 @@
 #ifndef SIMPLEENGINE_MOVEGENERATION_H
 #define SIMPLEENGINE_MOVEGENERATION_H
 
-#include "_globals.h"
+#include "transpositionTable.h"
 
 bool isInCheck(const Board* board,  int color);
 int generateMoves(const Board* board, Board results[], bool attacksOnly, int color);

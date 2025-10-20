@@ -1,9 +1,9 @@
 //
 // Created by jvani on 21/09/2025.
 //
-#include "../include/_globals.h"
-#include "../include/_lookupOneStepMoves.h"
-#include "../include/_lookupSlidingMoves.h"
+#include "../include/transpositionTable.h"
+#include "../include/attackTables.h"
+#include "../include/magicBitboards.h"
 
 #define MAX_ROOK_INDEX_BITS 12
 #define MAX_ROOK_ENTRIES (1 << MAX_ROOK_INDEX_BITS) // 4096

@@ -6,7 +6,7 @@
 #define SIMPLEENGINE_CORE_H
 
 
-#include "_globals.h"
+#include "transpositionTable.h"
 
 int iterativeDeepeningSearch(const Board* board, int maxDepth, int color, Board bestSeq[]);
 int timeLimitedIterativeDeepeningSearch(Board* board, int maxDepth, int color,

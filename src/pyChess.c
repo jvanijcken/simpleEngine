@@ -3,10 +3,10 @@
 //
 
 #include <Python.h>
-#include "../include/_globals.h"
+#include "../include/transpositionTable.h"
 #include "../include/algorithms.h"
-#include "../include/_zobristHashing.h"
-#include "../include/_evaluators.h"
+#include "../include/zobristHashing.h"
+#include "../include/boardEvaluation.h"
 
 
 
