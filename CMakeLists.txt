@@ -1,19 +1,34 @@
-cmake_minimum_required(VERSION 4.0)
-project(simpleEngine C)
+cmake_minimum_required(VERSION 3.15)
+project(PyChess C)
 
 set(CMAKE_C_STANDARD 99)
 
+# Find Python includes and library automatically
+find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 
-# Adjust this path to wherever your Python install is
-set(PYTHON_INCLUDE_DIR "C:/Users/jvani/AppData/Local/Programs/Python/Python312/include")
-set(PYTHON_LIB_DIR "C:/Users/jvani/AppData/Local/Programs/Python/Python312/libs")
+include_directories(${Python3_INCLUDE_DIRS})
+include_directories("../include")
 
-include_directories(${PYTHON_INCLUDE_DIR})
-link_directories(${PYTHON_LIB_DIR})
+# List your source files explicitly for clarity and adding subfolders
+set(SOURCES
+        ../src/algorithms.c
+        ../src/moveFunctions.c
+        ../src/moveGeneration.c
+        ../src/pychessmodule.c
 
-file(GLOB SOURCES "src/*.c")
+        ../src/tables/attackTables.c
+        ../src/tables/boardEvaluation.c
+        ../src/tables/magicBitboards.c
+        ../src/tables/transpositionTable.c
+        ../src/tables/zobristHashing.c
+)
 
-add_library(simpleEngine MODULE ${SOURCES})
+add_library(PyChess MODULE ${SOURCES})
 
-target_link_libraries(simpleEngine PRIVATE python312)
-set_target_properties(simpleEngine PROPERTIES PREFIX "" SUFFIX ".pyd")
+target_link_libraries(PyChess PRIVATE ${Python3_LIBRARIES})
+
+# Remove the 'lib' prefix and force .pyd suffix for Python extension on Windows
+set_target_properties(PyChess PROPERTIES
+        PREFIX ""
+        SUFFIX ".pyd"
+)
