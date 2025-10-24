@@ -1,1 +1,8 @@
-we need to compile the file pyChess as a lib
+
+how to recompile the module:
+
+    in CLion:
+        click file -> build -> rebuild
+        drag the PyChess.pyd from the cmake-build-debug into src/python (location where it is used)
+        overwrite the old file
+        done!
