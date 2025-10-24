@@ -230,7 +230,7 @@ pyIDS(PyObject *self, PyObject *args)
     double durationSeconds = 0.0;
 
     // Parse: Board, color, maxDepth, durationSeconds
-    if (!PyArg_ParseTuple(args, "Oiid", &board_obj, &color, &maxDepth, &durationSeconds)) {
+    if (!PyArg_ParseTuple(args, "O!iid", &BoardType, &board_obj, &color, &maxDepth, &durationSeconds)) {
         return NULL;
     }
 
@@ -242,7 +242,7 @@ pyIDS(PyObject *self, PyObject *args)
 
     // Convert Python Board to C Board struct
     Board board;
-    pyBoardToCStruct(&board, args);
+    pyBoardToCStruct(&board, board_obj);
 
     // Allocate best sequence array (depth-limited)
     Board *bestSeq = malloc(sizeof(Board) * maxDepth);
@@ -284,8 +284,6 @@ pyIDS(PyObject *self, PyObject *args)
 
     return result;
 }
-
-
 
 
 // MODULE
@@ -480,7 +478,7 @@ void CStructToPyBoard(const Board *pBoard, PyObject **out_py_board)
     // (You may want to store current color directly in Board; adjust this accordingly.)
 
     // ===== Create the PyChess.Board Python object =====
-    PyObject *args_tuple = Py_BuildValue("(OOii)",
+    PyObject *args_tuple = Py_BuildValue("OOii",
                                          py_board_list,
                                          py_castles_list,
                                          en_passant,
@@ -493,6 +491,7 @@ void CStructToPyBoard(const Board *pBoard, PyObject **out_py_board)
     Py_DECREF(py_castles_list);
 
     if (!py_board_obj) {
+        PyErr_Print(); // prints the actual TypeError
         PyErr_SetString(PyExc_RuntimeError, "Failed to create PyChess.Board object");
         return;
     }
