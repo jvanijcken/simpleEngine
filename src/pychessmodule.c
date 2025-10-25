@@ -214,9 +214,6 @@ static PyTypeObject BoardType = {
 
 // IMPORTABLE FUNCTION
 
-int pyIDS_functional_core(int pieces[][64], int passant[], int castles[][4], int color, int maxDepth, int durationSeconds);
-
-
 void pyBoardToCStruct(Board *pBoard, const PyObject *board_obj);
 void CStructToPyBoard(const Board* pBoard, PyObject **out_py_board);
 
@@ -354,7 +351,7 @@ int evaluateBoard(const Board *pBoard) {
             uint64_t pieces = pBoard->pieces[c][p];
             while (pieces) {
                 const int index = __builtin_ctzll(pieces);
-                pieces &= -pieces;
+                pieces &= pieces - 1;  // had a bug before (accidentally used pieces &= -pieces) -> caused infinite loop
                 score += pieceEvaluators[c][p][index];
             }
         }
