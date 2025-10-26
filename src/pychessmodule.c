@@ -9,6 +9,7 @@
 #include "../include/algorithms.h"
 #include "../include/zobristHashing.h"
 #include "../include/boardEvaluation.h"
+#include "../testing/debugTools.h"
 
 
 // Board object structure
@@ -404,7 +405,7 @@ void pyBoardToCStruct(Board *pBoard, const PyObject *board_obj) {
     // add pieces
     for (int i = 0; i < 64; i++) {
         const int coloredPiece = board_array[i];
-        if (coloredPiece == NO_PIECE) break;
+        if (coloredPiece == NO_PIECE) continue;  // another bug fix
         const int c = coloredPiece / 6;
         const int p = coloredPiece % 6;
         pBoard->pieces[c][p] |= (1ULL << i);
