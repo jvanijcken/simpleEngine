@@ -472,7 +472,7 @@ void CStructToPyBoard(const Board *pBoard, PyObject **out_py_board)
     }
 
     // ===== Side to move =====
-    const int color = (pBoard->colors[WHITE] & 1ULL) ? WHITE : BLACK; // depends on your engine's definition
+    const int color = pBoard->moveIndex % 2 == 0? WHITE : BLACK; // depends on your engine's definition
     // (You may want to store current color directly in Board; adjust this accordingly.)
 
     // ===== Create the PyChess.Board Python object =====
