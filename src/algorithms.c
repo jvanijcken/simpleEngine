@@ -97,9 +97,8 @@ int principalVariationSearch(const Board* board, const int depth, int alpha, con
     bool unwind = UNWIND;
     pthread_mutex_unlock(&time_mutex);
 
-    if (depth == 0 || unwind) {
-        return board->eval * SIGN(color);  // eval from MY perspective
-    }
+    if (depth == 0 || unwind) return board->eval * SIGN(color);  // eval from MY perspective
+
     Board results[512];
 
     const int nrOfMoves = generateMoves(board, results, false, color);
@@ -147,7 +146,6 @@ int principalVariationSearch(const Board* board, const int depth, int alpha, con
         unwind = UNWIND;
         pthread_mutex_unlock(&time_mutex);
         if (unwind) {
-            printf("SCR %d\n", alpha);
             return alpha;
         }
 
@@ -202,12 +200,10 @@ int iterativeDeepeningSearch(const Board* board, const int maxDepth, const int c
         if (unwind) break;
 
         score = principalVariationSearch(board, depth, -INF, INF, color, bestSeq);
-        printf("Q %d\n", score);
     }
     pthread_mutex_lock(&time_mutex);
     UNWIND = true;
     pthread_mutex_unlock(&time_mutex);
-    printf("PR %d\n", score);
     return score;
 }
 
