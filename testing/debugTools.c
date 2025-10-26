@@ -2,7 +2,7 @@
 // Created by jvani on 22/09/2025.
 //
 #include <stdio.h>
-#include "../include/globals.h"
+#include "../include/transpositionTable.h"
 
 int myGetPiece(const Board* board, const uint64_t position) {
     for (int color = 0; color < 2; color++) {

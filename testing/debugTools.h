@@ -5,7 +5,7 @@
 #ifndef SIMPLEENGINE_HELPERS_H
 #define SIMPLEENGINE_HELPERS_H
 
-#include "../include/globals.h"
+#include "../include/transpositionTable.h"
 
 void printBoard(const Board* board, int indent);
 void printIndexAsCoords(int index);

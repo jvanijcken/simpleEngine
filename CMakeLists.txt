@@ -21,6 +21,8 @@ set(SOURCES
         ../src/tables/magicBitboards.c
         ../src/tables/transpositionTable.c
         ../src/tables/zobristHashing.c
+
+        ../testing/debugTools.c
 )
 
 add_library(PyChess MODULE ${SOURCES})
