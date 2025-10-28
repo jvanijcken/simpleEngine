@@ -60,8 +60,6 @@ void addMove(Board* result, const uint64_t start, const uint64_t end,
 
     result->hash ^= colorHash;
 
-    result->moveIndex++;
-
     //revoke castling rights
     if (color) {  // black
         if (startPiece == K) {  // obviously king cannot be captured
@@ -95,6 +93,9 @@ void addMove(Board* result, const uint64_t start, const uint64_t end,
     } else {
         result->enPassant = 0ULL;
     }
+
+    // update isLastMoveAttack
+    result->isLastMoveAttack = (capturedPiece != NO_PIECE);
 }
 
 int blackKingsideCastle(Board* result) {
@@ -105,7 +106,6 @@ int blackKingsideCastle(Board* result) {
     addMove(result, E8, G8, K, K, NO_PIECE, BLACK, __builtin_ctzll(E8), __builtin_ctzll(G8));
     addMove(result, H8, F8, R, R, NO_PIECE, BLACK, __builtin_ctzll(H8), __builtin_ctzll(F8));
     result->hash ^= colorHash;  //corrections
-    result->moveIndex--;        //corrections
     return 1;
 }
 int blackQueensideCastle(Board* result) {
@@ -116,7 +116,6 @@ int blackQueensideCastle(Board* result) {
     addMove(result, E8, C8, K, K, NO_PIECE, BLACK, __builtin_ctzll(E8), __builtin_ctzll(C8));
     addMove(result, A8, D8, R, R, NO_PIECE, BLACK, __builtin_ctzll(A8), __builtin_ctzll(D8));
     result->hash ^= colorHash;  //corrections
-    result->moveIndex--;        //corrections
     return 1;
 }
 int whiteKingsideCastle(Board* result) {
@@ -127,7 +126,6 @@ int whiteKingsideCastle(Board* result) {
     addMove(result, E1, G1, K, K, NO_PIECE, BLACK, __builtin_ctzll(E1), __builtin_ctzll(G1));
     addMove(result, H1, F1, R, R, NO_PIECE, BLACK, __builtin_ctzll(H1), __builtin_ctzll(F1));
     result->hash ^= colorHash;  //corrections
-    result->moveIndex--;        //corrections
     return 1;
 }
 int whiteQueensideCastle(Board* result) {
@@ -138,7 +136,6 @@ int whiteQueensideCastle(Board* result) {
     addMove(result, E1, C1, K, K, NO_PIECE, BLACK, __builtin_ctzll(E1), __builtin_ctzll(C1));
     addMove(result, A1, D1, R, R, NO_PIECE, BLACK, __builtin_ctzll(A1), __builtin_ctzll(D1));
     result->hash ^= colorHash;  //corrections
-    result->moveIndex--;        //corrections
     return 1;
 }
 
