@@ -1,37 +1,16 @@
-import PyChess
+from PyChess import time_limited_iterative_deepening_search
+from globals import Board, PIECE_NUMBERS, PIECE_STRINGS
+
 import re
 
 
-PIECE_NUMBERS = {
-    "wP": 0,
-    "wR": 1,
-    "wN": 2,
-    "wB": 3,
-    "wQ": 4,
-    "wK": 5,
-    "bP": 6,
-    "bR": 7,
-    "bN": 8,
-    "bB": 9,
-    "bQ": 10,
-    "bK": 11,
-    "__": -1
-}
-PIECE_STRINGS = [
-    "wP",
-    "wR",
-    "wN",
-    "wB",
-    "wQ",
-    "wK",
-    "bP",
-    "bR",
-    "bN",
-    "bB",
-    "bQ",
-    "bK",
-    "__",
-]
+IDS = time_limited_iterative_deepening_search
+
+
+
+
+
+
 
 def convert_test_board(board_string: str):
     pattern = re.compile(
@@ -51,14 +30,14 @@ def convert_test_board(board_string: str):
     en_passant:         int = int(match.group("enpassant"))
     color:              int = 1 if match.group("color") == "B" else 0
 
-    board = PyChess.Board(number_board, castles, en_passant, color)
+    board = Board(number_board, castles, en_passant, color)
     return board
 
 
-def print_board(board: PyChess.Board):
+def print_board(board: Board):
     print("Board: ")
     for i in range(64):
-        piece_number: int  = board.board[i]
+        piece_number: int  = board.pieces[i]
         add_newline:  bool = (i % 8 == 7)
         print(f"{PIECE_STRINGS[piece_number]} ", end = "\n" if add_newline else "")
 
@@ -89,11 +68,9 @@ TEST_BOARD = \
 
 
 if __name__ == "__main__":
-    test_board: PyChess.Board = convert_test_board(TEST_BOARD)
-    result = PyChess.pyIDS(test_board, 0, 12, 1)
+    x: Board = convert_test_board(TEST_BOARD)
+    result = IDS(x.pieces, x.castles, x.en_passant, x.color, 4, 30)
 
 
     print(f"{result = }")
-    for ii in result[1]:
-        print_board(ii)
 

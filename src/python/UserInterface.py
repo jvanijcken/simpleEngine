@@ -1,15 +1,12 @@
-from PyChess import pyIDS, Board
+from globals import Board, CHESS_SYMBOLS
+
 from customtkinter import CTk, CTkFrame, CTkButton, CTkLabel
 from collections import namedtuple
 
 UI_tuple = namedtuple("UI", [
     "root", "board_frame", "tiles", "prev_button", "next_button", "index_label"])
 
-CHESS_SYMBOLS = [
-    "♙", "♖", "♘", "♗", "♕", "♔",
-    "♟", "♜", "♞", "♝", "♛", "♚",
-    ""  # for index -1 (NO_PIECE)
-]
+
 
 
 def build_ui() -> UI_tuple:
