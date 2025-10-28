@@ -118,8 +118,8 @@ typedef struct {
     uint64_t enPassant;
     uint64_t hash;
     uint8_t  castle;
-    int moveIndex;
     int eval;
+    bool isLastMoveAttack;
 } Board;
 
 
