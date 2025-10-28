@@ -11,6 +11,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <wchar.h>
 
 #include "../include/transpositionTable.h"
 #include "../include/moveGeneration.h"
@@ -19,13 +20,36 @@ bool UNWIND = true;
 bool CALCULATION_FINISHED = true;
 pthread_mutex_t time_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+bool getIsTimeUp() {
+    pthread_mutex_lock(&time_mutex);
+    const bool unwind = UNWIND;
+    pthread_mutex_unlock(&time_mutex);
+    return unwind;
+}
+void setIsTimeUp(const bool value) {
+    pthread_mutex_lock(&time_mutex);
+    UNWIND = value;
+    pthread_mutex_unlock(&time_mutex);
+}
+bool getIsCalculationFinished() {
+    pthread_mutex_lock(&time_mutex);
+    const bool calculation_finished = CALCULATION_FINISHED;
+    pthread_mutex_unlock(&time_mutex);
+    return calculation_finished;
+}
+void setIsCalculationFinished(const bool value) {
+    pthread_mutex_lock(&time_mutex);
+    CALCULATION_FINISHED = value;
+    pthread_mutex_unlock(&time_mutex);
+}
+
 
 TTEntry* probeTT(const uint64_t hash) {
     TTEntry* e = &transTable[TT_INDEX(hash)];
     return (e->hash == hash) ? e : NULL;
 }
 
-void storeTT(const uint64_t hash, const int depth, const int score, const int flag) {
+void storeTT(const uint64_t hash, const int depth, const int score, const int flag ) {
     TTEntry* e = &transTable[TT_INDEX(hash)];
     e->hash = hash;
     e->depth = depth;
@@ -75,14 +99,12 @@ int sortDescBlack(const void* a, const void* b) {
 }
 
 
-int (*colorSort(const int color))(const void*, const void*) {
+int (*sortBestMovesFirst(const int color))(const void*, const void*) {
     return color? &sortDescBlack : &sortDescWhite;
 }
 
+int principalVariationSearch(const Board* board, const int depth, int alpha, const int beta, const int color) {
 
-int principalVariationSearch(const Board* board, const int depth, int alpha, const int beta, const int color, Board bestSeq[]) {
-
-    bestSeq[0] = *board;
 
     // check if cached
     const TTEntry* entry = probeTT(board->hash);
@@ -92,65 +114,49 @@ int principalVariationSearch(const Board* board, const int depth, int alpha, con
         if (entry->flag ==  1 && entry->score >= beta)  return beta;
     }
 
-    // check if time is up
-    pthread_mutex_lock(&time_mutex);
-    bool unwind = UNWIND;
-    pthread_mutex_unlock(&time_mutex);
+    const bool isPastHorizon = depth <= 0;
+    const bool isNoisyMove = board->isLastMoveAttack;
+    const bool isTooFarPastHorizon = depth < -10;
 
-    if (depth == 0 || unwind) return board->eval * SIGN(color);  // eval from MY perspective
+    if (getIsTimeUp())                 return board->eval * SIGN(color);
+    if (isPastHorizon && !isNoisyMove) return board->eval * SIGN(color);  // continues if noisy position
+    if (isTooFarPastHorizon)           return board->eval * SIGN(color);  // too expensive
+
 
     Board results[512];
-
     const int nrOfMoves = generateMoves(board, results, false, color);
 
+    // checkmate and stalemate
     if (nrOfMoves == 0 && isInCheck(board, color)) return (-CHECKMATE - depth);
-    if (nrOfMoves == 0) return 0;
+    if (nrOfMoves == 0)                            return 0;
 
     // order with estimated best moves first
-    qsort(results, nrOfMoves, sizeof(Board), colorSort(color));
+    qsort(results, nrOfMoves, sizeof(Board), sortBestMovesFirst(color));
 
     const int oldAlpha = alpha;  // save for caching
+
     for (int i = 0; i < nrOfMoves; i++) {
-
-
-        Board localBestSeq[depth];
-        memset(localBestSeq, 0, sizeof(localBestSeq));
-
         int score;
-
         if (i == 0) {
             // principal search (presumed best move)
-            score = - principalVariationSearch(&results[i], depth - 1, - beta     , -alpha, !color, localBestSeq);
-        } else {
+            score = - principalVariationSearch(&results[i], depth - 1, - beta     , -alpha, !color);
+        }
+        else {
             // scout search (cheap)
-            score = - principalVariationSearch(&results[i], depth - 1, - alpha - 1, -alpha, !color, localBestSeq);
+            score = - principalVariationSearch(&results[i], depth - 1, - alpha - 1, -alpha, !color);
 
-            // use full search if scout failed (presumed best move wasn't the best move)
-            if (alpha < score && score < beta) {
-                score = - principalVariationSearch(&results[i], depth - 1, -beta, -alpha, !color, localBestSeq);
+            if (alpha < score && score < beta) {  // use full search if scout failed (presumed best move wasn't the best move)
+                score = - principalVariationSearch(&results[i], depth - 1, -beta, -alpha, !color);
             }
         }
 
-        // save if best score
-        if (score > alpha) {
-            alpha = score;
-            for (int x = 0; x < depth; x++) {bestSeq[x + 1] = localBestSeq[x];}  // copy
-        }
-        // prune if possible
-        if (alpha >= beta) {
-            break;
-        }
-
-        // check if time is up
-        pthread_mutex_lock(&time_mutex);
-        unwind = UNWIND;
-        pthread_mutex_unlock(&time_mutex);
-        if (unwind) {
-            return alpha;
-        }
-
+        if (score > alpha) alpha = score;  // save if best score
+        if (alpha >= beta) break;  // prune if possible
+        if (getIsTimeUp()) return alpha;
+        
     }
-    // store hash
+
+    // store result
     int flag = 0;
     if (alpha <= oldAlpha) flag = -1;
     else if (alpha >= beta) flag = 1;
@@ -159,33 +165,7 @@ int principalVariationSearch(const Board* board, const int depth, int alpha, con
     return alpha;
 }
 
-void* updateUnwind(void* arg) {
-    const int seconds = *(int*)arg;
-    const time_t start_time = time(NULL);
-    const time_t end_time = start_time + seconds;
-
-    // Set unwind to false (allows computation)
-    pthread_mutex_lock(&time_mutex);
-    UNWIND = false;
-    pthread_mutex_unlock(&time_mutex);
-
-    printf("[Timer] Looping for %d seconds...\n", seconds);
-
-    while (time(NULL) < end_time) {
-        usleep(100000);  // sleep 100ms to avoid busy spinning
-    }
-
-    // Set the flag to false
-    pthread_mutex_lock(&time_mutex);
-    UNWIND = true;  // Set unwind to true (stops computation)
-    pthread_mutex_unlock(&time_mutex);
-
-    printf("[Timer] Done!\n");
-    return NULL;
-}
-
-int iterativeDeepeningSearch(const Board* board, const int maxDepth, const int color,
-        Board bestSeq[]) {
+int iterativeDeepeningSearch(const Board* board, const int maxDepth, const int color) {
 
     pthread_mutex_lock(&time_mutex);
     UNWIND = false;
@@ -193,17 +173,13 @@ int iterativeDeepeningSearch(const Board* board, const int maxDepth, const int c
 
     int score = -INF;
     for (int depth = 0; depth < maxDepth; depth++) {
-        // check if time is up
-        pthread_mutex_lock(&time_mutex);
-        const bool unwind = UNWIND;
-        pthread_mutex_unlock(&time_mutex);
-        if (unwind) break;
+        if (getIsTimeUp()) break;  // check if time is up
 
-        score = principalVariationSearch(board, depth, -INF, INF, color, bestSeq);
+        score = principalVariationSearch(board, depth, -INF, INF, color);
+        if (score >= CHECKMATE || score <= -CHECKMATE) break;  // if checkmate is found you can stop
     }
-    pthread_mutex_lock(&time_mutex);
-    UNWIND = true;
-    pthread_mutex_unlock(&time_mutex);
+
+    setIsTimeUp(true);
     return score;
 }
 
@@ -211,63 +187,72 @@ typedef struct {
     Board* pBoard;
     int maxDepth;
     int color;
-    Board* bestSeq;
 } IDSArgs;
 
-void* wrappedIDS(void* arg) {
+void* threadedIDS(void* arg) {
     const IDSArgs* args = (IDSArgs*)(arg);
     int* result = malloc(sizeof(int));
-    *result = iterativeDeepeningSearch(args->pBoard, args->maxDepth, args->color, args->bestSeq);
+    *result = iterativeDeepeningSearch(args->pBoard, args->maxDepth, args->color);
 
-    pthread_mutex_lock(&time_mutex);
-    CALCULATION_FINISHED = true;
-    pthread_mutex_unlock(&time_mutex);
+    setIsCalculationFinished(true);
 
     return (void*)(result);
 }
 
-int timeLimitedIterativeDeepeningSearch(Board* board, const int maxDepth, const int color,
-        Board bestSeq[], const int durationSeconds) {
+int timeLimitedIterativeDeepeningSearch(Board* board, const int maxDepth, const int color, const double durationSeconds) {
     pthread_t monitor_thread;
 
-    IDSArgs args = {board, maxDepth, color, bestSeq};
+    IDSArgs* args = malloc(sizeof(IDSArgs));
+    if (!args) {
+        fprintf(stderr, "Failed to allocate IDSArgs\n");
+        return 0;
+    }
+    args->pBoard = board;
+    args->maxDepth = maxDepth;
+    args->color = color;
 
-    UNWIND = false;  // no threads yet, so we can safely set this variable
-    CALCULATION_FINISHED = false;
+    setIsTimeUp(false);
+    setIsCalculationFinished(false);
 
-    pthread_create(&monitor_thread, NULL, wrappedIDS, &args);
+    pthread_create(&monitor_thread, NULL, threadedIDS, args);
 
-    const time_t start_time = time(NULL);
-    const time_t end_time = start_time + durationSeconds;
+    // --- Use high-resolution timer ---
+    struct timespec start_time, current_time;
+    clock_gettime(CLOCK_MONOTONIC, &start_time);
 
     while (true) {
+    
+        clock_gettime(CLOCK_MONOTONIC, &current_time);  // Get current time
 
-        // check if calculation finished
-        pthread_mutex_lock(&time_mutex);
-        const bool finished = CALCULATION_FINISHED;
-        pthread_mutex_unlock(&time_mutex);
-        if (finished) {
+        const double elapsed = (double)(current_time.tv_sec - start_time.tv_sec)
+                             + (double)(current_time.tv_nsec - start_time.tv_nsec) / 1e9f;
+
+        //if (elapsed >= durationSeconds) break;  // Check if we’ve exceeded the time limit
+        //if (getIsCalculationFinished()) break;  // Check if calculation finished
+
+        if (getIsCalculationFinished()) {
+            printf("calculation finished \n");
             break;
         }
-
         // check for max time
-        if (time(NULL) >= end_time) {
+        if (elapsed >= durationSeconds) {
+            printf("calculation time up \n");
             break;
         }
-        usleep(100000);  // sleep 100ms to avoid busy spinning
+
+
+        usleep(100000); // sleep 100ms to avoid busy spinning
     }
 
-    // Set unwind to true (stops computation if computation is still running)
-    pthread_mutex_lock(&time_mutex);
-    UNWIND = true;
-    pthread_mutex_unlock(&time_mutex);
+    // Signal the worker thread to stop if needed
+    setIsTimeUp(true);
 
-    // get the result of our thread
+    // Join the monitor thread and retrieve result
     void* finalScore;
     pthread_join(monitor_thread, &finalScore);
     const int result = *(int*)(finalScore);
     free(finalScore);
+    free(args);
 
     return result;
-
 }
