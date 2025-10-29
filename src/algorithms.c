@@ -20,6 +20,10 @@ bool UNWIND = true;
 bool CALCULATION_FINISHED = true;
 pthread_mutex_t time_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+uint64_t tt_collisions = 0;
+uint64_t tt_probes = 0;
+uint64_t tt_hits = 0;
+
 bool getIsTimeUp() {
     pthread_mutex_lock(&time_mutex);
     const bool unwind = UNWIND;
@@ -45,16 +49,26 @@ void setIsCalculationFinished(const bool value) {
 
 
 TTEntry* probeTT(const uint64_t hash) {
+    tt_probes++;
     TTEntry* e = &transTable[TT_INDEX(hash)];
-    return (e->hash == hash) ? e : NULL;
+    if (e->hash == hash) {
+        tt_hits++;
+        return e;
+    }
+    if (e->hash) {
+        tt_collisions++;
+    }
+    return NULL;
 }
 
 void storeTT(const uint64_t hash, const int depth, const int score, const int flag ) {
     TTEntry* e = &transTable[TT_INDEX(hash)];
-    e->hash = hash;
-    e->depth = depth;
-    e->score = score;
-    e->flag = flag;
+    if (e->depth < depth) {
+        e->hash  = hash;
+        e->depth = depth;
+        e->score = score;
+        e->flag  = flag;
+    }
 }
 
 
@@ -202,6 +216,10 @@ void* threadedIDS(void* arg) {
 int timeLimitedIterativeDeepeningSearch(Board* board, const int maxDepth, const int color, const double durationSeconds) {
     pthread_t monitor_thread;
 
+    tt_collisions = 0;
+    tt_probes     = 0;
+    tt_hits       = 0;
+
     IDSArgs* args = malloc(sizeof(IDSArgs));
     if (!args) {
         fprintf(stderr, "Failed to allocate IDSArgs\n");
@@ -253,6 +271,10 @@ int timeLimitedIterativeDeepeningSearch(Board* board, const int maxDepth, const 
     const int result = *(int*)(finalScore);
     free(finalScore);
     free(args);
+
+    printf("tt_collisions = %llu \n", tt_collisions);
+    printf("tt_probes     = %llu \n", tt_probes);
+    printf("tt_hits       = %llu \n", tt_hits);
 
     return result;
 }
