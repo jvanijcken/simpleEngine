@@ -40,6 +40,7 @@ void addMove(Board* result, const uint64_t start, const uint64_t end,
         const int startPiece, const int endPiece, const int capturedPiece, const int color,
         const int startIndex, const int endIndex) {
     // Clear start from piece and side
+
     result->pieces[color][startPiece] &= ~start;
     result->colors[color]             &= ~start;
     result->eval -= pieceEvaluators[color][startPiece][startIndex];
@@ -143,10 +144,12 @@ int generateMoves(const Board* board, Board results[], const bool attacksOnly, c
     int moveCount = 0;
 
     for (int startPiece = P; startPiece <= K; startPiece++) {
+
         const MoveFunction function = moveFunctions[startPiece];
         uint64_t pieces = board->pieces[color][startPiece];
 
         while (pieces) {
+
             const uint64_t start = pieces & -pieces;
             const int startIndex = __builtin_ctzll(start);
             uint64_t moves = function(startIndex, board, color);
@@ -155,6 +158,7 @@ int generateMoves(const Board* board, Board results[], const bool attacksOnly, c
             if (attacksOnly) {moves &= board->colors[!color];}
 
             while (moves) {
+
                 const uint64_t end = moves & -moves;
                 const int endIndex = __builtin_ctzll(end);
                 moves &= moves - 1;
@@ -181,10 +185,12 @@ int generateMoves(const Board* board, Board results[], const bool attacksOnly, c
     // add castle moves
     results[moveCount + 0] = *board;
     results[moveCount + 1] = *board;
+
     if (color) {
         moveCount += blackKingsideCastle (&results[moveCount]);
         moveCount += blackQueensideCastle(&results[moveCount]);
-    } else {
+    }
+    else {
         moveCount += whiteKingsideCastle (&results[moveCount]);
         moveCount += whiteQueensideCastle(&results[moveCount]);
     }

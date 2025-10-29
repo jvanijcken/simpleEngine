@@ -97,7 +97,7 @@
 #define WHITE 0
 #define BLACK 1
 
-#define TT_SIZE (1 << 20)  // ~1M entries
+#define TT_SIZE (1 << 24)  // ~20 was too few with depth = 7
 #define TT_INDEX(hash) ((hash) & (TT_SIZE - 1))
 
 #define SIGN(color) ((color) == 0 ? 1 : -1)
@@ -144,13 +144,6 @@ extern TTEntry transTable[TT_SIZE];
 #define BLACK_CASTLES (1ULL << 0 | 1ULL << 1)
 #define WHITE_CASTLES (1ULL << 2 | 1ULL << 3)
 
-//extern const uint64_t kingStartPositions[CASTLE_MOVE_COUNT];
-//extern const uint64_t kingEndPositions  [CASTLE_MOVE_COUNT];
-//extern const uint64_t freeCastleSquares [CASTLE_MOVE_COUNT];
-//extern const uint64_t safeCastleSquares [CASTLE_MOVE_COUNT];
-//extern const uint64_t rookStartPositions[CASTLE_MOVE_COUNT];
-//extern const uint64_t rookEndPositions  [CASTLE_MOVE_COUNT];
-//extern const uint8_t  castleRights      [CASTLE_MOVE_COUNT];
 
 
 #endif //SIMPLEENGINE_GLOBALS_H

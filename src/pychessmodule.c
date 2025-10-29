@@ -13,9 +13,7 @@
 // HELPER FUNCTIONS
 uint64_t zobristHash(const Board* board, const int color) {
     uint64_t key = 0ULL;
-    if (color) {
-        key ^= colorHash;
-    }
+
     for (int c = 0; c < 2; c++) {
         for (int piece = 0; piece < 6; piece++) {
             uint64_t pieces = board->pieces[c][piece];
@@ -26,6 +24,10 @@ uint64_t zobristHash(const Board* board, const int color) {
                 pieces &= pieces - 1;
             }
         }
+    }
+
+    if (color) {
+        key ^= colorHash;
     }
     return key;
 }

@@ -5,5 +5,5 @@
 #include "../../include/transpositionTable.h"
 #include <stdint.h>
 //
-TTEntry transTable[TT_SIZE];
+TTEntry transTable[TT_SIZE] = {0};
 

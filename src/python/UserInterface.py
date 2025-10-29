@@ -30,6 +30,7 @@ def build_ui() -> UI_tuple:
             text_color="black", fg_color=color, hover_color=color,  corner_radius=0
         )
         tile.grid(row=i//8, column=i%8, padx=0, pady=0)
+
         tiles.append(tile)
 
     menu_frame = CTkFrame(root)
@@ -51,11 +52,13 @@ def build_ui() -> UI_tuple:
 
 
 def show_in_new_ui(full_board_array: list[Board]):
-
     board_array: list[Board] = []
+
     for board in full_board_array:
-        if all(x == -1 for x in board.board[:]):
+
+        if all(x == -1 for x in board.pieces):
             break
+
         board_array.append(board)
 
     ui:          UI_tuple  = build_ui()
@@ -72,6 +75,7 @@ def show_in_new_ui(full_board_array: list[Board]):
 
     ui.prev_button.configure(command=prev_cmd)
     ui.next_button.configure(command=next_cmd)
+
     return ui.root
 
 
@@ -88,10 +92,12 @@ def load_new_board(ui: UI_tuple, board_array: list[Board], old_index: int, delta
 
     for i in range(64):
         tile:     CTkButton = ui.tiles[i]
-        piece_nr: int       = selected_board.board[i]
+        piece_nr: int       = selected_board.pieces[i]
         text:     str       = CHESS_SYMBOLS[piece_nr]
         tile.configure(text=text)
+
     ui.index_label.configure(text = f"{new_index}")
+
     return new_index
 
 
