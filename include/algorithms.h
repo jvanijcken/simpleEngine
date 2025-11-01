@@ -14,6 +14,7 @@ typedef struct {
 } Result;
 
 void forceStopCalculations();
+Result directSearch(const Board* board, int depth, int color);
 Result iterativeDeepeningSearch(const Board* board, int maxDepth, int color);
 Result timeLimitedIterativeDeepeningSearch(Board* board, int maxDepth, int color, double durationSeconds);
 

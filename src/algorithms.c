@@ -181,10 +181,7 @@ int principalVariationSearch(const Board* board, const int depth, int alpha, con
 }
 
 Result iterativeDeepeningSearch(const Board* board, const int maxDepth, const int color) {
-
-    pthread_mutex_lock(&time_mutex);
-    UNWIND = false;
-    pthread_mutex_unlock(&time_mutex);
+    setIsTimeUp(false);
 
     int score = -INF;
 
@@ -197,6 +194,14 @@ Result iterativeDeepeningSearch(const Board* board, const int maxDepth, const in
         depth++;
     }
 
+    setIsTimeUp(true);
+    return (Result){score, depth};
+}
+
+
+Result directSearch(const Board* board, const int depth, const int color) {
+    setIsTimeUp(false);
+    const int score = - principalVariationSearch(board, depth, -INF, INF, color);  // "-" because negamax
     setIsTimeUp(true);
     return (Result){score, depth};
 }
