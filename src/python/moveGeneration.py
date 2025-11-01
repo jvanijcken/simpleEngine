@@ -1,7 +1,4 @@
 from globals import *
-import dataclasses
-from UserInterface import show_in_new_ui
-
 
 
 WP_ATTACKS    = [ (-1,  1), (-1, -1)                                                             ]
@@ -100,10 +97,7 @@ def pawn_moves(board: Board, pushes: list[tuple], attacks: list[tuple], index: i
             target:       int = new_row * 8 + new_col
             target_piece: int = board.pieces[target]
 
-            if target_piece == NO_PIECE:
-                break
-
-            if target_piece in enemy_pieces:
+            if target_piece in enemy_pieces or target == board.en_passant:
                 result.append(target)
                 break
 
@@ -198,11 +192,10 @@ def move_piece(board: Board, move: Move) -> Board:
     new_position.pieces[move.end]   = move.end_piece
 
     if move.end == board.en_passant:  # remove pawn if en passant
+        print("passanting")
         start_row = move.start // 8
-        end_col   = move.end    & 8
+        end_col   = move.end    % 8
         new_position.pieces[start_row * 8 + end_col] = NO_PIECE
-
-    new_position.is_white = not board.is_white
 
     if board.is_white:  # revoke white castle rights
         if move.start_piece == WK:
@@ -228,9 +221,11 @@ def move_piece(board: Board, move: Move) -> Board:
 
     new_position.en_passant = NO_MOVE # update en passant
     if (
-            (move.start_piece == WP and move.start - move.end == 8) or
-            (move.start_piece == WP and move.end - move.start == 8)):
+            (move.start_piece == WP and abs(move.end - move.start) == 16) or
+            (move.start_piece == BP and abs(move.end - move.start) == 16)):
         new_position.en_passant = max(move.start, move.end) - 8
+
+    new_position.is_white = not board.is_white
 
     return new_position
 
