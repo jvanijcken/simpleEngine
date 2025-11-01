@@ -15,6 +15,7 @@
 
 #include "../include/transpositionTable.h"
 #include "../include/moveGeneration.h"
+#include "../include/algorithms.h"
 
 bool UNWIND = true;
 bool CALCULATION_FINISHED = true;
@@ -179,22 +180,29 @@ int principalVariationSearch(const Board* board, const int depth, int alpha, con
     return alpha;
 }
 
-int iterativeDeepeningSearch(const Board* board, const int maxDepth, const int color) {
+Result iterativeDeepeningSearch(const Board* board, const int maxDepth, const int color) {
 
     pthread_mutex_lock(&time_mutex);
     UNWIND = false;
     pthread_mutex_unlock(&time_mutex);
 
     int score = -INF;
-    for (int depth = 0; depth < maxDepth; depth++) {
+
+    int depth = 0;
+    while (depth < maxDepth) {
         if (getIsTimeUp()) break;  // check if time is up
 
         score = principalVariationSearch(board, depth, -INF, INF, color);
         if (score >= CHECKMATE || score <= -CHECKMATE) break;  // if checkmate is found you can stop
+        depth++;
     }
 
     setIsTimeUp(true);
-    return score;
+    return (Result){score, depth};
+}
+
+void forceStopCalculations() {
+    setIsTimeUp(true);
 }
 
 typedef struct {
@@ -205,15 +213,15 @@ typedef struct {
 
 void* threadedIDS(void* arg) {
     const IDSArgs* args = (IDSArgs*)(arg);
-    int* result = malloc(sizeof(int));
-    *result = iterativeDeepeningSearch(args->pBoard, args->maxDepth, args->color);
+    Result* pResult = malloc(sizeof(Result));
+    *pResult = iterativeDeepeningSearch(args->pBoard, args->maxDepth, args->color);
 
     setIsCalculationFinished(true);
 
-    return (void*)(result);
+    return (void*)(pResult);
 }
 
-int timeLimitedIterativeDeepeningSearch(Board* board, const int maxDepth, const int color, const double durationSeconds) {
+Result timeLimitedIterativeDeepeningSearch(Board* board, const int maxDepth, const int color, const double durationSeconds) {
     pthread_t monitor_thread;
 
     tt_collisions = 0;
@@ -223,7 +231,7 @@ int timeLimitedIterativeDeepeningSearch(Board* board, const int maxDepth, const 
     IDSArgs* args = malloc(sizeof(IDSArgs));
     if (!args) {
         fprintf(stderr, "Failed to allocate IDSArgs\n");
-        return 0;
+        return (Result){0, 0};
     }
     args->pBoard = board;
     args->maxDepth = maxDepth;
@@ -245,9 +253,6 @@ int timeLimitedIterativeDeepeningSearch(Board* board, const int maxDepth, const 
         const double elapsed = (double)(current_time.tv_sec - start_time.tv_sec)
                              + (double)(current_time.tv_nsec - start_time.tv_nsec) / 1e9f;
 
-        //if (elapsed >= durationSeconds) break;  // Check if we’ve exceeded the time limit
-        //if (getIsCalculationFinished()) break;  // Check if calculation finished
-
         if (getIsCalculationFinished()) {
             printf("calculation finished \n");
             break;
@@ -258,7 +263,6 @@ int timeLimitedIterativeDeepeningSearch(Board* board, const int maxDepth, const 
             break;
         }
 
-
         usleep(100000); // sleep 100ms to avoid busy spinning
     }
 
@@ -268,7 +272,7 @@ int timeLimitedIterativeDeepeningSearch(Board* board, const int maxDepth, const 
     // Join the monitor thread and retrieve result
     void* finalScore;
     pthread_join(monitor_thread, &finalScore);
-    const int result = *(int*)(finalScore);
+    const Result result = *(Result*)(finalScore);
     free(finalScore);
     free(args);
 

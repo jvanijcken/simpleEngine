@@ -8,7 +8,13 @@
 
 #include "transpositionTable.h"
 
-int iterativeDeepeningSearch(const Board* board, int maxDepth, int color, Board bestSeq[]);
-int timeLimitedIterativeDeepeningSearch(Board* board, int maxDepth, int color, double durationSeconds);
+typedef struct {
+    int score;
+    int depth;
+} Result;
+
+void forceStopCalculations();
+Result iterativeDeepeningSearch(const Board* board, int maxDepth, int color);
+Result timeLimitedIterativeDeepeningSearch(Board* board, int maxDepth, int color, double durationSeconds);
 
 #endif //SIMPLEENGINE_CORE_H
