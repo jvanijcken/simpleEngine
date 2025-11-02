@@ -1,10 +1,12 @@
 from dataclasses import dataclass
 from threading import Thread
-from queue import Queue
+from queue import Empty
 from moveGeneration import generate_moves
 from globals import *
 from collections import namedtuple
-from comp import pick_best_move
+from random import randint
+from multiprocessing import Process, Queue
+from score_calculation import start_score_calculation
 
 
 Result = namedtuple("Result", ["move", "board", "move_nr"])
@@ -37,6 +39,8 @@ class App:
     last_end_fields:    list[int]
     score:              int
     move_nr:            int
+    eval:               tuple[int, int, float]
+    history:            list[Board]
 
 
 @dataclass
@@ -45,7 +49,8 @@ class Buffer:
     next_positions: list[Board]
 
 
-APP = App(
+
+APP = App(  # this is read by UI
     board              = START_BOARD,
     selected_fields    = [],
     highlighted_fields = [],
@@ -53,6 +58,8 @@ APP = App(
     last_end_fields    = [],
     score              = 0,
     move_nr            = 0,
+    eval               = (0, 0, 0),
+    history            = []
 )
 
 _moves, _boards = generate_moves(APP.board)
@@ -61,8 +68,27 @@ BUFFER = Buffer(
     next_positions = _boards
 )
 
-SCORE_QUEUE = Queue()
-MOVE_QUEUE  = Queue()
+
+UPDATE_ID = randint(0, 10**10)
+UPDATE_QUEUE = Queue()
+
+
+def check_for_app_updates(dt) -> bool:
+    updates = False
+
+    while True:
+        try:
+            property_name, value = UPDATE_QUEUE.get_nowait()
+            updates = True
+
+            if not hasattr(APP, property_name):
+                raise ValueError()
+
+            setattr(APP, property_name, value)
+        except Empty:
+            break
+
+    return updates
 
 
 def square_click(index: int) -> None:
@@ -99,6 +125,9 @@ def square_click(index: int) -> None:
 
 
 def make_move(move: Move, board: Board):
+    global UPDATE_ID
+    UPDATE_ID = randint(0, 10**10)
+
     APP.board                = board
     APP.selected_fields      = []
     APP.highlighted_fields   = []
@@ -109,37 +138,16 @@ def make_move(move: Move, board: Board):
     moves, boards = generate_moves(APP.board)
     BUFFER.next_moves        = moves
     BUFFER.next_positions    = boards
+    update_score()
 
 
-def app_update(dt) -> bool:
-    if MOVE_QUEUE.empty():
-        return False
-
-    result: Result = MOVE_QUEUE.get()
-    if result.move_nr != APP.move_nr:
-        return False
-
-    make_move(result.move, result.board)
-    return True
-
-def move_calculation_process(next_moves, next_positions, move_nr, max_depth, max_time):
-    best_move, best_position = pick_best_move(next_moves, next_positions, max_depth, max_time)
-    result = Result(best_move, best_position, move_nr)
-    MOVE_QUEUE.put(result)
-
-def start_move_calculation(max_depth: int, max_time: int):
-    Thread(
-        target = move_calculation_process,
-        args   = (BUFFER.next_moves, BUFFER.next_positions, APP.move_nr, max_depth, max_time),
-        daemon = True
-    ).start()
-
-
-
-
-
-
-
+def update_score():
+    start_score_calculation(
+        APP.board.pieces[:],
+        APP.board.castles[:],
+        APP.board.en_passant,
+        0 if APP.board.is_white else 1,
+        UPDATE_QUEUE)
 
 
 
