@@ -5,7 +5,7 @@ from globals import *
 from collections import namedtuple
 from random import randint
 from multiprocessing import Queue, Process, Pipe
-from score_calculation import calculate_score, score_worker
+from score_calculation import score_worker
 
 
 Result = namedtuple("Result", ["move", "board", "move_nr"])
