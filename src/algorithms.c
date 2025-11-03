@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <wchar.h>
+#include <Python.h>
 
 #include "../include/transpositionTable.h"
 #include "../include/moveGeneration.h"
@@ -212,59 +213,51 @@ void forceStopCalculations() {
 
 typedef struct {
     Board* pBoard;
-    int maxDepth;
+    int depth;
     int color;
-} IDSArgs;
+} DSArgs;
 
-void* threadedIDS(void* arg) {
-    const IDSArgs* args = (IDSArgs*)(arg);
+void* threadedDS(void* arg) {
+    const DSArgs* args = (DSArgs*)(arg);
     Result* pResult = malloc(sizeof(Result));
-    *pResult = iterativeDeepeningSearch(args->pBoard, args->maxDepth, args->color);
+    pResult->score = principalVariationSearch(args->pBoard, args->depth, -INF, INF, args->color);
+    pResult->depth = args->depth;
 
     setIsCalculationFinished(true);
 
     return (void*)(pResult);
 }
 
-Result timeLimitedIterativeDeepeningSearch(Board* board, const int maxDepth, const int color, const double durationSeconds) {
+Result timeLimitedDirectSearch(Board* board, const int depth, const int color, PyObject* stop) {
     pthread_t monitor_thread;
 
-    tt_collisions = 0;
-    tt_probes     = 0;
-    tt_hits       = 0;
-
-    IDSArgs* args = malloc(sizeof(IDSArgs));
+    DSArgs* args = malloc(sizeof(DSArgs));
     if (!args) {
         fprintf(stderr, "Failed to allocate IDSArgs\n");
         return (Result){0, 0};
     }
     args->pBoard = board;
-    args->maxDepth = maxDepth;
+    args->depth = depth;
     args->color = color;
 
     setIsTimeUp(false);
     setIsCalculationFinished(false);
 
-    pthread_create(&monitor_thread, NULL, threadedIDS, args);
-
-    // --- Use high-resolution timer ---
-    struct timespec start_time, current_time;
-    clock_gettime(CLOCK_MONOTONIC, &start_time);
+    pthread_create(&monitor_thread, NULL, threadedDS, args);
 
     while (true) {
-    
-        clock_gettime(CLOCK_MONOTONIC, &current_time);  // Get current time
 
-        const double elapsed = (double)(current_time.tv_sec - start_time.tv_sec)
-                             + (double)(current_time.tv_nsec - start_time.tv_nsec) / 1e9f;
+        PyGILState_STATE gstate = PyGILState_Ensure();
+        PyObject* result = PyObject_CallMethod(stop, "is_set", NULL);
+        const int should_stop = PyObject_IsTrue(result);
+        Py_XDECREF(result);
+        PyGILState_Release(gstate);
 
         if (getIsCalculationFinished()) {
-            printf("calculation finished \n");
             break;
         }
         // check for max time
-        if (elapsed >= durationSeconds) {
-            printf("calculation time up \n");
+        if (should_stop) {
             break;
         }
 
@@ -280,10 +273,6 @@ Result timeLimitedIterativeDeepeningSearch(Board* board, const int maxDepth, con
     const Result result = *(Result*)(finalScore);
     free(finalScore);
     free(args);
-
-    printf("tt_collisions = %llu \n", tt_collisions);
-    printf("tt_probes     = %llu \n", tt_probes);
-    printf("tt_hits       = %llu \n", tt_hits);
 
     return result;
 }

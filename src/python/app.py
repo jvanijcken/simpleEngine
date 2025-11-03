@@ -1,18 +1,11 @@
-from dataclasses import dataclass
 from queue import Empty
 from moveGeneration import generate_moves
 from globals import *
-from collections import namedtuple
+from dataclasses import dataclass
 from random import randint
-from multiprocessing import Queue, Process, Pipe
+from multiprocessing import Queue, Process, Pipe, Value, Event
 from score_calculation import score_worker
-
-
-Result = namedtuple("Result", ["move", "board", "move_nr"])
-
-# Global references
-WORKER_PROCESS = None
-PARENT_CONN    = None
+from ctypes import c_bool
 
 
 START_PIECES = [
@@ -76,6 +69,7 @@ UPDATE_ID           = randint(0, 10**10)
 RUNNING_PROCESSES   = []
 UPDATE_QUEUE        = Queue()
 TASK_QUEUE          = Queue()
+SHARED_FLAG         = Event()
 
 
 
@@ -151,10 +145,14 @@ def make_move(move: Move, board: Board):
 
 
 def update_score():
+    global SHARED_FLAG
+
+    SHARED_FLAG.set() # set flag to True
+
     if not RUNNING_PROCESSES:
         process = Process(
             target = score_worker,
-            args   = (UPDATE_QUEUE, TASK_QUEUE),
+            args   = (UPDATE_QUEUE, TASK_QUEUE, SHARED_FLAG),
             daemon = True
         )
         process.start()

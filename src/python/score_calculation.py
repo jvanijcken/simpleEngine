@@ -2,9 +2,15 @@ from PyChess import direct_search
 from time import perf_counter
 from queue import Empty
 from time import sleep
+from multiprocessing import Value, Queue, Event
+from multiprocessing.synchronize import Event as MPEvent
 
 
-def score_worker(update_queue, task_queue):
+def score_worker(
+        update_queue: Queue,
+        task_queue:   Queue,
+        shared_flag:  MPEvent):
+
     current_task = None
     depth = 0
 
@@ -15,12 +21,11 @@ def score_worker(update_queue, task_queue):
             if new_task == "STOP":
                 break
             current_task = new_task
-            print("got a task")
             depth = 0
+            shared_flag.clear()  # set value to false
         except Empty:
-            if depth > 7:
-                sleep(0.01)
-                continue
+            pass
+
 
         if current_task:
             pieces, castle_rights, en_passant, color, update_id = current_task
@@ -32,7 +37,7 @@ def score_worker(update_queue, task_queue):
             # IMPORTANT:
             # because this function is in C and not python, this function will run in its entirety.
             # calling force_stop_calculations is no use, because there is not a moment where it can be interrupted
-            score, _ = direct_search(pieces, castle_rights, en_passant, color, depth)
+            score, _ = direct_search(pieces, castle_rights, en_passant, color, depth, shared_flag)
 
 
             elapsed = perf_counter() - start
