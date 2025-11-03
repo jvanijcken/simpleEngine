@@ -1,15 +1,18 @@
 from dataclasses import dataclass
-from threading import Thread
 from queue import Empty
 from moveGeneration import generate_moves
 from globals import *
 from collections import namedtuple
 from random import randint
-from multiprocessing import Process, Queue
-from score_calculation import start_score_calculation
+from multiprocessing import Queue, Process, Pipe
+from score_calculation import calculate_score, score_worker
 
 
 Result = namedtuple("Result", ["move", "board", "move_nr"])
+
+# Global references
+WORKER_PROCESS = None
+PARENT_CONN    = None
 
 
 START_PIECES = [
@@ -69,29 +72,35 @@ BUFFER = Buffer(
 )
 
 
-UPDATE_ID = randint(0, 10**10)
-UPDATE_QUEUE = Queue()
+UPDATE_ID           = randint(0, 10**10)
+RUNNING_PROCESSES   = []
+UPDATE_QUEUE        = Queue()
+TASK_QUEUE          = Queue()
 
 
-def check_for_app_updates(dt) -> bool:
+
+def check_for_app_updates() -> bool:
     updates = False
 
     while True:
         try:
-            property_name, value = UPDATE_QUEUE.get_nowait()
+            property_name, value, update_id = UPDATE_QUEUE.get_nowait()
             updates = True
+
+            if update_id != UPDATE_ID:
+                continue
 
             if not hasattr(APP, property_name):
                 raise ValueError()
 
             setattr(APP, property_name, value)
-        except Empty:
+        except (Empty, IndexError):
             break
 
     return updates
 
 
-def square_click(index: int) -> None:
+def square_click(index: int) -> bool:
     own_pieces = [0, 1, 2, 3, 4, 5] if APP.board.is_white else [6, 7, 8, 9, 10, 11]
     piece: int = APP.board.pieces[index]
 
@@ -102,7 +111,7 @@ def square_click(index: int) -> None:
         else:
             APP.selected_fields    = []
             APP.highlighted_fields = []
-        return
+        return False
 
 
     for move, board in zip(BUFFER.next_moves, BUFFER.next_positions):
@@ -110,18 +119,18 @@ def square_click(index: int) -> None:
 
         if is_selected_move:
             make_move(move, board)
-            break
+            return True
+
 
     # No moves found
+    if piece in own_pieces:
+        APP.selected_fields    = [index]
+        APP.highlighted_fields = [m.end for m in BUFFER.next_moves if m.start == index]
     else:
-        if piece in own_pieces:
-            APP.selected_fields    = [index]
-            APP.highlighted_fields = [m.end for m in BUFFER.next_moves if m.start == index]
-        else:
-            APP.selected_fields    = []
-            APP.highlighted_fields = []
+        APP.selected_fields    = []
+        APP.highlighted_fields = []
 
-    return
+    return False
 
 
 def make_move(move: Move, board: Board):
@@ -142,12 +151,32 @@ def make_move(move: Move, board: Board):
 
 
 def update_score():
-    start_score_calculation(
+    if not RUNNING_PROCESSES:
+        process = Process(
+            target = score_worker,
+            args   = (UPDATE_QUEUE, TASK_QUEUE),
+            daemon = True
+        )
+        process.start()
+        RUNNING_PROCESSES.append(process)
+
+    args = (
         APP.board.pieces[:],
         APP.board.castles[:],
         APP.board.en_passant,
         0 if APP.board.is_white else 1,
-        UPDATE_QUEUE)
+        UPDATE_ID
+    )
+    TASK_QUEUE.put(args)
+
+
+
+
+
+
+
+
+
 
 
 

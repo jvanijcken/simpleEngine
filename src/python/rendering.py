@@ -1,17 +1,16 @@
-from app import APP, App, square_click
 
-from pyglet.graphics import Batch
-from pyglet import shapes
-from pyglet.gl import glClearColor
-from pyglet.image import load
-from pyglet.sprite import Sprite
-from pyglet.text import Label
-from pyglet.clock import schedule_interval
-from pyglet.app import run
-from pyglet.window import Window
-from app import APP, check_for_app_updates, update_score
 
 if __name__ == "__main__":
+    from pyglet.graphics import Batch
+    from pyglet import shapes
+    from pyglet.gl import glClearColor
+    from pyglet.image import load
+    from pyglet.sprite import Sprite
+    from pyglet.text import Label
+    from pyglet.clock import schedule_interval
+    from pyglet.app import run
+    from pyglet.window import Window
+    from app import APP, check_for_app_updates, update_score, square_click
 
     SAND_COLOR = (255, 216, 139)
     WHITE = (255, 255, 255)
@@ -50,7 +49,7 @@ if __name__ == "__main__":
     }
 
 
-    def render_board(app: App):
+    def render_board():
         grid.clear()
         sprites.clear()
         buttons.clear()
@@ -87,7 +86,7 @@ if __name__ == "__main__":
                     batch  = batch)
                 grid.append(square)
 
-                if index in app.highlighted_fields:
+                if index in APP.highlighted_fields:
                     highlight_circle = shapes.Circle(
                         x      = square.x + square_size/2,
                         y      = square.y + square_size/2,
@@ -98,7 +97,7 @@ if __name__ == "__main__":
                     highlight_circle.opacity = 128  # 50% transparent
                     garbage.append(highlight_circle)
 
-                if index in app.selected_fields + app.last_start_fields + app.last_end_fields:
+                if index in APP.selected_fields + APP.last_start_fields + APP.last_end_fields:
                     highlight_square = shapes.Rectangle(
                         x      = board.x + square_size * col,
                         y      = board.y + square_size * (7 - row),
@@ -110,7 +109,7 @@ if __name__ == "__main__":
                     garbage.append(highlight_square)
 
                 # chess piece images
-                piece: int = app.board.pieces[index]
+                piece: int = APP.board.pieces[index]
                 if piece == -1:
                     continue
                 image = piece_dict[piece]
@@ -187,7 +186,7 @@ if __name__ == "__main__":
             color     = BLACK,
             batch     = batch
         )
-        labels["neval_label"] = eval_label
+        labels["eval_label"] = eval_label
 
 
     @window.event
@@ -198,16 +197,9 @@ if __name__ == "__main__":
                 index = i
 
         if index:
-            square_click(index)
-            render_board(APP)
-
-        #if button_ != mouse.LEFT:
-        #    return
-        #btn = buttons[0]
-        #if not (btn.x <= x <= btn.x + btn.width and btn.y <= y <= btn.y + btn.height):
-        #    return
-        #
-        #start_score_calculation(APP.board, APP.move_nr)
+            if square_click(index):
+                update_score()
+            render_board()
 
 
     @window.event
@@ -220,14 +212,15 @@ if __name__ == "__main__":
     @window.event
     def on_resize(width, height):
         """Recreate the grid when window is resized."""
-        render_board(APP)
+        render_board()
         return None
 
     def app_update(dt):
-        if check_for_app_updates(dt):
-            render_board(APP)
+        if check_for_app_updates():
+            render_board()
 
-    render_board(APP)
-    schedule_interval(app_update, 1/60)
     update_score()
+    render_board()
+    schedule_interval(app_update, 1/60)
+
     run()
