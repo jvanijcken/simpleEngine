@@ -3,9 +3,8 @@ from moveGeneration import generate_moves
 from globals import *
 from dataclasses import dataclass
 from random import randint
-from multiprocessing import Queue, Process, Pipe, Value, Event
-from score_calculation import score_worker
-from ctypes import c_bool
+from multiprocessing import Queue, Process, Event
+from MPworkers import score_worker
 
 
 START_PIECES = [

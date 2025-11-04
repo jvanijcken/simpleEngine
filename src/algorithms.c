@@ -22,10 +22,6 @@ bool UNWIND = true;
 bool CALCULATION_FINISHED = true;
 pthread_mutex_t time_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-uint64_t tt_collisions = 0;
-uint64_t tt_probes = 0;
-uint64_t tt_hits = 0;
-
 bool getIsTimeUp() {
     pthread_mutex_lock(&time_mutex);
     const bool unwind = UNWIND;
@@ -51,14 +47,9 @@ void setIsCalculationFinished(const bool value) {
 
 
 TTEntry* probeTT(const uint64_t hash) {
-    tt_probes++;
     TTEntry* e = &transTable[TT_INDEX(hash)];
     if (e->hash == hash) {
-        tt_hits++;
         return e;
-    }
-    if (e->hash) {
-        tt_collisions++;
     }
     return NULL;
 }
@@ -119,8 +110,7 @@ int (*sortBestMovesFirst(const int color))(const void*, const void*) {
     return color? &sortDescBlack : &sortDescWhite;
 }
 
-int principalVariationSearch(const Board* board, const int depth, int alpha, const int beta, const int color) {
-
+int principalVariationSearch(const Board* board, const int depth, int alpha, const int beta, const int color, Board* pBestMove) {
 
     // check if cached
     const TTEntry* entry = probeTT(board->hash);
@@ -134,9 +124,9 @@ int principalVariationSearch(const Board* board, const int depth, int alpha, con
     const bool isNoisyMove = board->isLastMoveAttack;
     const bool isTooFarPastHorizon = depth < -10;
 
-    if (getIsTimeUp())                 return board->eval * SIGN(color);
-    if (isPastHorizon && !isNoisyMove) return board->eval * SIGN(color);  // continues if noisy position
-    if (isTooFarPastHorizon)           return board->eval * SIGN(color);  // too expensive
+    if (getIsTimeUp())                 {return board->eval * SIGN(color);}
+    if (isPastHorizon && !isNoisyMove) {return board->eval * SIGN(color);}  // continues if noisy position
+    if (isTooFarPastHorizon)           {return board->eval * SIGN(color);}  // too expensive
 
 
     Board results[512];
@@ -153,23 +143,30 @@ int principalVariationSearch(const Board* board, const int depth, int alpha, con
 
     for (int i = 0; i < nrOfMoves; i++) {
         int score;
+        Board bestNextMove = {0};
         if (i == 0) {
             // principal search (presumed best move)
-            score = - principalVariationSearch(&results[i], depth - 1, - beta     , -alpha, !color);
+            score = - principalVariationSearch(&results[i], depth - 1, - beta     , -alpha, !color, &bestNextMove);
         }
         else {
             // scout search (cheap)
-            score = - principalVariationSearch(&results[i], depth - 1, - alpha - 1, -alpha, !color);
+            score = - principalVariationSearch(&results[i], depth - 1, - alpha - 1, -alpha, !color, &bestNextMove);
 
             if (alpha < score && score < beta) {  // use full search if scout failed (presumed best move wasn't the best move)
-                score = - principalVariationSearch(&results[i], depth - 1, -beta, -alpha, !color);
+                score = - principalVariationSearch(&results[i], depth - 1, -beta, -alpha, !color, &bestNextMove);
             }
         }
 
-        if (score > alpha) alpha = score;  // save if best score
-        if (alpha >= beta) break;  // prune if possible
-        if (getIsTimeUp()) return alpha;
-        
+        if (score > alpha) {
+            alpha = score;
+            *pBestMove = results[i];
+        } // save if best score & save best move
+        if (alpha >= beta) {
+            break;
+        }  // prune if possible
+        if (getIsTimeUp()) {
+            return alpha;
+        }
     }
 
     // store result
@@ -181,54 +178,112 @@ int principalVariationSearch(const Board* board, const int depth, int alpha, con
     return alpha;
 }
 
-Result iterativeDeepeningSearch(const Board* board, const int maxDepth, const int color) {
-    setIsTimeUp(false);
-
-    int score = -INF;
-
-    int depth = 0;
-    while (depth < maxDepth) {
-        if (getIsTimeUp()) break;  // check if time is up
-
-        score = principalVariationSearch(board, depth, -INF, INF, color);
-        if (score >= CHECKMATE || score <= -CHECKMATE) break;  // if checkmate is found you can stop
-        depth++;
-    }
-
-    setIsTimeUp(true);
-    return (Result){score, depth};
-}
-
-
-Result directSearch(const Board* board, const int depth, const int color) {
-    setIsTimeUp(false);
-    const int score = - principalVariationSearch(board, depth, -INF, INF, color);  // "-" because negamax
-    setIsTimeUp(true);
-    return (Result){score, depth};
-}
-
-void forceStopCalculations() {
-    setIsTimeUp(true);
-}
-
 typedef struct {
     Board* pBoard;
     int depth;
     int color;
 } DSArgs;
 
+void* threadedIDS(void* arg) {
+    const DSArgs* args = (DSArgs*)(arg);
+
+    setIsTimeUp(false);
+
+    int score = 0;
+    int depth = 0;
+    Board bestMove = {0};
+
+    while (depth < args->depth) {
+        if (getIsTimeUp()) {  // check if time is up
+            break;
+        }
+        score = principalVariationSearch(args->pBoard, depth, -INF, INF, args->color, &bestMove);
+
+        if (score >= CHECKMATE || score <= -CHECKMATE) {  // if checkmate is found you can stop
+            break;
+        }
+        depth++;
+    }
+    setIsCalculationFinished(true);
+
+    Result* pResult = malloc(sizeof(Result));
+    pResult->score = 0;
+    pResult->depth = 0;
+    pResult->bestMove = bestMove;
+
+    return (void*)pResult;
+}
+
+Result iterativeDeepeningSearch(Board* board, const int depth, const int color, PyObject* stop) {
+    pthread_t monitor_thread;
+
+    DSArgs* args = malloc(sizeof(DSArgs));
+    if (!args) {
+        fprintf(stderr, "Failed to allocate IDSArgs\n");
+        return (Result){0, 0};
+    }
+    args->pBoard = board;
+    args->depth  = depth;
+    args->color  = color;
+
+    setIsTimeUp(false);
+    setIsCalculationFinished(false);
+
+    pthread_create(&monitor_thread, NULL, threadedIDS, args);
+
+    while (true) {
+
+        PyGILState_STATE gstate = PyGILState_Ensure();
+        PyObject* result = PyObject_CallMethod(stop, "is_set", NULL);
+        const int should_stop = PyObject_IsTrue(result);
+        Py_XDECREF(result);
+        PyGILState_Release(gstate);
+
+        if (getIsCalculationFinished()) {
+            break;
+        }
+        // check for max time
+        if (should_stop) {
+            break;
+        }
+
+        usleep(100000); // sleep 100ms to avoid busy spinning
+    }
+
+    // Signal the worker thread to stop if needed
+    setIsTimeUp(true);
+
+    // Join the monitor thread and retrieve result
+    void* finalScore;
+    pthread_join(monitor_thread, &finalScore);
+    const Result result = *(Result*)(finalScore);
+    free(finalScore);
+    free(args);
+
+    return result;
+}
+
+
+void forceStopCalculations() {
+    setIsTimeUp(true);
+}
+
 void* threadedDS(void* arg) {
     const DSArgs* args = (DSArgs*)(arg);
-    Result* pResult = malloc(sizeof(Result));
-    pResult->score = principalVariationSearch(args->pBoard, args->depth, -INF, INF, args->color);
+
+    Board bestMove = {0};
+    Result* pResult  = malloc(sizeof(Result));
+
+    pResult->score = principalVariationSearch(args->pBoard, args->depth, -INF, INF, args->color, &bestMove);
     pResult->depth = args->depth;
+    pResult->bestMove = bestMove;
 
     setIsCalculationFinished(true);
 
     return (void*)(pResult);
 }
 
-Result timeLimitedDirectSearch(Board* board, const int depth, const int color, PyObject* stop) {
+Result directSearch(Board* board, const int depth, const int color, PyObject* stop) {
     pthread_t monitor_thread;
 
     DSArgs* args = malloc(sizeof(DSArgs));
@@ -256,11 +311,9 @@ Result timeLimitedDirectSearch(Board* board, const int depth, const int color, P
         if (getIsCalculationFinished()) {
             break;
         }
-        // check for max time
         if (should_stop) {
             break;
         }
-
         usleep(100000); // sleep 100ms to avoid busy spinning
     }
 

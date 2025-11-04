@@ -56,28 +56,8 @@ int evaluateBoard(const Board *pBoard) {
     return score;
 }
 
-// IMPORTABLE FUNCTION
-static PyObject *
-iterative_deepening_search(PyObject *self, PyObject *args)
-{
-    PyObject *pieces_list = NULL;
-    PyObject *castle_rights_list = NULL;
-    int en_passant = 0;
-    int color = 0;
-    int maxDepth = 0;
 
-    // Parse Python arguments: (pieces, en_passant, castle_rights, color, maxDepth, duration_seconds)
-    if (!PyArg_ParseTuple(
-            args, "OOiii",
-            &pieces_list,
-            &castle_rights_list,
-            &en_passant,
-            &color,
-            &maxDepth))
-    {
-        return NULL;
-    }
-
+Board* convertArgsToBoard(PyObject* pieces_list, PyObject* castle_rights_list, const int en_passant, const int color, Board* result) {
     // --- Validate input types ---
     if (!PyList_Check(pieces_list)) {
         PyErr_SetString(PyExc_TypeError, "pieces must be a list of ints");
@@ -87,9 +67,6 @@ iterative_deepening_search(PyObject *self, PyObject *args)
         PyErr_SetString(PyExc_TypeError, "castle_rights must be a list of ints");
         return NULL;
     }
-
-    // --- Build C board struct ---
-    Board board = {0};
 
     // Convert pieces list → C array
     // add pieces
@@ -104,14 +81,14 @@ iterative_deepening_search(PyObject *self, PyObject *args)
         if (coloredPiece == NO_PIECE) continue;  // another bug fix
         const int c = coloredPiece / 6;
         const int p = coloredPiece % 6;
-        board.pieces[c][p] |= (1ULL << i);
+        result->pieces[c][p] |= (1ULL << i);
     }
 
     // add colors
-    board.colors[WHITE] = board.pieces[WHITE][P] | board.pieces[WHITE][R] | board.pieces[WHITE][N] |
-                          board.pieces[WHITE][B] | board.pieces[WHITE][Q] | board.pieces[WHITE][K];
-    board.colors[BLACK] = board.pieces[BLACK][P] | board.pieces[BLACK][R] | board.pieces[BLACK][N] |
-                          board.pieces[BLACK][B] | board.pieces[BLACK][Q] | board.pieces[BLACK][K];
+    result->colors[WHITE] = result->pieces[WHITE][P] | result->pieces[WHITE][R] | result->pieces[WHITE][N] |
+                            result->pieces[WHITE][B] | result->pieces[WHITE][Q] | result->pieces[WHITE][K];
+    result->colors[BLACK] = result->pieces[BLACK][P] | result->pieces[BLACK][R] | result->pieces[BLACK][N] |
+                            result->pieces[BLACK][B] | result->pieces[BLACK][Q] | result->pieces[BLACK][K];
 
     // Convert castle_rights list → C array
     const Py_ssize_t num_rights = PyList_Size(castle_rights_list);
@@ -122,19 +99,110 @@ iterative_deepening_search(PyObject *self, PyObject *args)
             return NULL;
         }
         const int hasRight = (int)PyLong_AsLong(item);
-        board.castle |= (hasRight)? 1ULL << i : 0ULL;
+        result->castle |= (hasRight)? 1ULL << i : 0ULL;
     }
 
-    board.enPassant = (en_passant == NO_MOVE)? 0ULL : 1ULL << en_passant;
+    result->enPassant = (en_passant == NO_MOVE)? 0ULL : 1ULL << en_passant;
 
-    board.hash = zobristHash(&board, color);
-    board.eval = evaluateBoard(&board);
+    result->hash = zobristHash(result, color);
+    result->eval = evaluateBoard(result);
+    return result;
+}
 
-    // --- Run the core search ---
-    const Result result =  iterativeDeepeningSearch(&board, maxDepth, color);
 
-    // --- Return just the score ---
-    return Py_BuildValue("(ii)", result.score, result.depth);
+PyObject* convertBoardToArgs(const Board* board, const int color) {
+    printf("converting Board to Args...\n");
+    if (!board) {
+        PyErr_SetString(PyExc_ValueError, "board is NULL");
+        return NULL;
+    }
+
+    // --- Create Python lists ---
+    PyObject *pieces_list = PyList_New(64);
+    if (!pieces_list) return PyErr_NoMemory();
+
+    PyObject *castle_rights_list = PyList_New(4);
+    if (!castle_rights_list) {
+        Py_DECREF(pieces_list);
+        return PyErr_NoMemory();
+    }
+
+    // --- Fill pieces_list (64 squares) ---
+    for (int sq = 0; sq < 64; sq++) {
+        int coloredPiece = -1;  // NO_PIECE
+        for (int c = 0; c < 2; c++) {  // WHITE, BLACK
+            for (int p = 0; p < 6; p++) {  // P, N, B, R, Q, K
+                if (board->pieces[c][p] & (1ULL << sq)) {
+                    coloredPiece = c * 6 + p;
+                    break;
+                }
+            }
+            if (coloredPiece != -1) break;
+        }
+        PyObject *val = PyLong_FromLong(coloredPiece);
+        PyList_SET_ITEM(pieces_list, sq, val);  // Steals reference
+    }
+
+    // --- Fill castle_rights_list (4 values: WK, WQ, BK, BQ) ---
+    for (int i = 0; i < 4; i++) {
+        int hasRight = (board->castle & (1ULL << i)) ? 1 : 0;
+        PyObject *val = PyLong_FromLong(hasRight);
+        PyList_SET_ITEM(castle_rights_list, i, val);
+    }
+
+    // --- en_passant ---
+    int en_passant = -1;  // NO_MOVE by default
+    if (board->enPassant) {
+        for (int sq = 0; sq < 64; sq++) {
+            if (board->enPassant & (1ULL << sq)) {
+                en_passant = sq;
+                break;
+            }
+        }
+    }
+
+    // --- Create final tuple: (pieces_list, castle_rights_list, en_passant, color) ---
+    PyObject *result = PyTuple_New(4);
+    PyTuple_SET_ITEM(result, 0, pieces_list);          // Steals ref
+    PyTuple_SET_ITEM(result, 1, castle_rights_list);   // Steals ref
+    PyTuple_SET_ITEM(result, 2, PyLong_FromLong(en_passant));
+    PyTuple_SET_ITEM(result, 3, PyLong_FromLong(color));
+
+    printf("finished converting Board to Args...\n");
+
+    return result;
+}
+
+
+
+// IMPORTABLE FUNCTION
+static PyObject *
+iterative_deepening_search(PyObject *self, PyObject *args)
+{
+    PyObject *pieces_list        = NULL;
+    PyObject *castle_rights_list = NULL;
+    int en_passant               = 0;
+    int color                    = 0;
+    int maxDepth                 = 0;
+    PyObject *stop_flag          = NULL;
+
+    if (!PyArg_ParseTuple(args, "OOiii", &pieces_list, &castle_rights_list, &en_passant, &color, &maxDepth)) {
+        return NULL;
+    }
+    Py_XINCREF(stop_flag);  // keep this object alive!
+    Board board = {0};
+    if (!convertArgsToBoard(pieces_list, castle_rights_list, en_passant, color, &board)) {
+        return NULL;
+    };
+
+    const Result result =  iterativeDeepeningSearch(&board, maxDepth, color, stop_flag);
+
+    const int opposite_color = (color)? 0 : 1;
+    PyObject* board_args = convertBoardToArgs(&result.bestMove, opposite_color);
+    PyObject* meta = Py_BuildValue("(ii)", result.score, result.depth);
+
+    Py_DECREF(stop_flag);
+    return PySequence_Concat(meta, board_args);
 }
 
 
@@ -161,67 +229,22 @@ direct_search(PyObject *self, PyObject *args)
     {
         return NULL;
     }
-    Py_XINCREF(stop_flag);  // keep this object alive! (check if needed)
-
-    // --- Validate input types ---
-    if (!PyList_Check(pieces_list)) {
-        PyErr_SetString(PyExc_TypeError, "pieces must be a list of ints");
-        return NULL;
-    }
-    if (!PyList_Check(castle_rights_list)) {
-        PyErr_SetString(PyExc_TypeError, "castle_rights must be a list of ints");
-        return NULL;
-    }
-
-    // --- Build C board struct ---
+    Py_XINCREF(stop_flag);  // keep this object alive!
     Board board = {0};
+    if (!convertArgsToBoard(pieces_list, castle_rights_list, en_passant, color, &board)) {
+        return NULL;
+    };
 
-    // Convert pieces list → C array
-    // add pieces
-    for (int i = 0; i < 64; i++) {
-        PyObject *item = PyList_GetItem(pieces_list, i);
-        if (!PyLong_Check(item)) {
-            PyErr_SetString(PyExc_TypeError, "pieces list must contain ints");
-            return NULL;
-        }
-        const int coloredPiece = (int)PyLong_AsLong(item);
+    printf("starting calculation in C...\n");
+    const Result result = directSearch(&board, depth, color, stop_flag);
+    printf("end calculation in C...\n");
 
-        if (coloredPiece == NO_PIECE) continue;  // another bug fix
-        const int c = coloredPiece / 6;
-        const int p = coloredPiece % 6;
-        board.pieces[c][p] |= (1ULL << i);
-    }
+    const int opposite_color = (color)? 0 : 1;
+    PyObject* board_args = convertBoardToArgs(&result.bestMove, opposite_color);
+    PyObject* meta = Py_BuildValue("(ii)", result.score, result.depth);
 
-    // add colors
-    board.colors[WHITE] = board.pieces[WHITE][P] | board.pieces[WHITE][R] | board.pieces[WHITE][N] |
-                          board.pieces[WHITE][B] | board.pieces[WHITE][Q] | board.pieces[WHITE][K];
-    board.colors[BLACK] = board.pieces[BLACK][P] | board.pieces[BLACK][R] | board.pieces[BLACK][N] |
-                          board.pieces[BLACK][B] | board.pieces[BLACK][Q] | board.pieces[BLACK][K];
-
-    // Convert castle_rights list → C array
-    const Py_ssize_t num_rights = PyList_Size(castle_rights_list);
-    for (Py_ssize_t i = 0; i < num_rights && i < 4; i++) {
-        PyObject *item = PyList_GetItem(castle_rights_list, i);
-        if (!PyLong_Check(item)) {
-            PyErr_SetString(PyExc_TypeError, "castle_rights list must contain ints");
-            return NULL;
-        }
-        const int hasRight = (int)PyLong_AsLong(item);
-        board.castle |= (hasRight)? 1ULL << i : 0ULL;
-    }
-
-    board.enPassant = (en_passant == NO_MOVE)? 0ULL : 1ULL << en_passant;
-
-    board.hash = zobristHash(&board, color);
-    board.eval = evaluateBoard(&board);
-
-
-    // smh
-    const Result result = timeLimitedDirectSearch(&board, depth, color, stop_flag);
     Py_DECREF(stop_flag);
-
-    // --- Return just the score ---
-    return Py_BuildValue("(ii)", result.score, result.depth);
+    return PySequence_Concat(meta, board_args);
 }
 
 

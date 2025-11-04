@@ -9,7 +9,8 @@ def iterative_deepening_search(
         en_passant: int,
         color: int,
         max_depth: int,
-) -> tuple[int, int]: ...
+        flag,
+) -> tuple[int, int, list[int], list[int], int, int]: ...
 
 
 def direct_search(
@@ -19,7 +20,7 @@ def direct_search(
         color: int,
         depth: int,
         flag
-) -> tuple[int, int]: ...
+) -> tuple[int, int, list[int], list[int], int, int]: ...
 
 
 def force_stop_calculations() -> None: ...

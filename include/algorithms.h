@@ -11,11 +11,11 @@
 typedef struct {
     int score;
     int depth;
+    Board bestMove;
 } Result;
 
 void forceStopCalculations();
-Result directSearch(const Board* board, int depth, int color);
-Result iterativeDeepeningSearch(const Board* board, int maxDepth, int color);
-Result timeLimitedDirectSearch(Board* board, int depth, int color, PyObject* stop);
+Result iterativeDeepeningSearch(Board* board, int depth, int color, PyObject* stop);
+Result directSearch(Board* board, int depth, int color, PyObject* stop);
 
 #endif //SIMPLEENGINE_CORE_H
