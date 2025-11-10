@@ -4,7 +4,8 @@ from globals import *
 from dataclasses import dataclass
 from random import randint
 from multiprocessing import Queue, Process, Event
-from MPworkers import score_worker
+from MPworkers import MPWorker
+from time import time
 
 
 START_PIECES = [
@@ -27,148 +28,143 @@ START_BOARD = Board(
 
 @dataclass
 class App:
-    board:              Board
-    selected_fields:    list[int]
-    highlighted_fields: list[int]
-    last_start_fields:  list[int]
-    last_end_fields:    list[int]
-    score:              int
-    move_nr:            int
-    eval:               tuple[int, int, float]
-    history:            list[Board]
+    board                   : Board
 
+    # UI board info
+    selected_fields         : list[int]
+    highlighted_fields      : list[int]
+    last_start_fields       : list[int]
+    last_end_fields         : list[int]
 
-@dataclass
-class Buffer:
-    next_moves:     list[Move]
-    next_positions: list[Board]
+    # analysis              :
+    time_of_last_move       : float
+    time_of_last_update     : float
+    best_position           : Board | None
+    score                   : int
+    depth                   : int
+    move_nr                 : int
 
+    # settings              :
+    white_player_cpu        : bool
+    black_player_cpu        : bool
+    cpu_move_time_sec       : float
+
+    history                 : list[Board]
+    next_moves              : dict[tuple[int, int], Board]
+
+    update_id               : int
 
 
 APP = App(  # this is read by UI
-    board              = START_BOARD,
-    selected_fields    = [],
-    highlighted_fields = [],
-    last_start_fields  = [],
-    last_end_fields    = [],
-    score              = 0,
-    move_nr            = 0,
-    eval               = (0, 0, 0),
-    history            = []
+    board                   = START_BOARD,
+    selected_fields         = [],
+    highlighted_fields      = [],
+    last_start_fields       = [],
+    last_end_fields         = [],
+
+    time_of_last_move       = time(),
+    time_of_last_update     = time(),
+    best_position           = None,
+    score                   = 0,
+    depth                   = 0,
+    move_nr                 = 0,
+
+    white_player_cpu        = True,
+    black_player_cpu        = False,
+    cpu_move_time_sec       = 2,
+
+    history                 = [],
+    next_moves              = generate_moves(START_BOARD),
+
+    update_id               = randint(0, 10**10)
 )
 
-_moves, _boards = generate_moves(APP.board)
-BUFFER = Buffer(
-    next_moves     = _moves,
-    next_positions = _boards
-)
+MP_WORKER = MPWorker()
 
 
-UPDATE_ID           = randint(0, 10**10)
-RUNNING_PROCESSES   = []
-UPDATE_QUEUE        = Queue()
-TASK_QUEUE          = Queue()
-SHARED_FLAG         = Event()
+def user_input(tile_selected=None) -> bool:
+    is_legal_move         : bool      = tile_selected in APP.highlighted_fields
+
+    piece                 : int       = APP.board.pieces[tile_selected]
+    own_pieces            : list[int] = [0, 1, 2, 3, 4, 5] if APP.board.is_white else [6, 7, 8, 9, 10, 11]
+    is_own_piece_selected : bool      = piece in own_pieces
+
+    if is_legal_move:
+        new_position = get_new_position(tile_selected)
+        make_move(new_position)
+        MP_WORKER.terminate_all_tasks()
+        return True
+
+    if is_own_piece_selected:
+        select_piece(tile_selected)
+        return True
+
+    else:  # clicked on a non-active piece
+        deselect_piece()
+        return True
 
 
-
-def check_for_app_updates() -> bool:
-    updates = False
-
-    while True:
-        try:
-            property_name, value, update_id = UPDATE_QUEUE.get_nowait()
-            updates = True
-
-            if update_id != UPDATE_ID:
-                continue
-
-            if not hasattr(APP, property_name):
-                raise ValueError()
-
-            setattr(APP, property_name, value)
-        except (Empty, IndexError):
-            break
-
-    return updates
-
-
-def square_click(index: int) -> bool:
-    own_pieces = [0, 1, 2, 3, 4, 5] if APP.board.is_white else [6, 7, 8, 9, 10, 11]
-    piece: int = APP.board.pieces[index]
-
-    if not APP.selected_fields and piece != NO_PIECE:  # just select a piece
-        if piece in own_pieces:
-            APP.selected_fields    = [index]
-            APP.highlighted_fields = [m.end for m in BUFFER.next_moves if m.start == index]
-        else:
-            APP.selected_fields    = []
-            APP.highlighted_fields = []
+def game_checks() -> bool:
+    if MP_WORKER.is_idle():
+        MP_WORKER.add_task(APP.board, APP.depth + 1, APP.update_id)
         return False
 
-
-    for move, board in zip(BUFFER.next_moves, BUFFER.next_positions):
-        is_selected_move: bool = move.start in APP.selected_fields and move.end == index
-
-        if is_selected_move:
-            make_move(move, board)
-            return True
-
-
-    # No moves found
-    if piece in own_pieces:
-        APP.selected_fields    = [index]
-        APP.highlighted_fields = [m.end for m in BUFFER.next_moves if m.start == index]
-    else:
-        APP.selected_fields    = []
-        APP.highlighted_fields = []
+    if result := MP_WORKER.get_next_result():
+        update_app_data(result)
+        return True
 
     return False
 
+def deselect_piece():
+    APP.selected_fields    = []
+    APP.highlighted_fields = []
 
-def make_move(move: Move, board: Board):
-    global UPDATE_ID
-    UPDATE_ID = randint(0, 10**10)
+
+def select_piece(index):
+    APP.selected_fields    = [index]
+    APP.highlighted_fields = [end for start, end in APP.next_moves if start == index]
+
+
+def get_new_position(index) -> Board:
+    try:
+        start, end = APP.selected_fields[0], index
+    except IndexError:
+        raise ValueError("trying to make move, but no piece selected")
+    try:
+        return APP.next_moves[(start, end)]
+    except KeyError:
+        raise ValueError("move selected was not in list of legal moves")
+
+
+def make_move(board: Board):
+    APP.update_id = randint(0, 10**10)
 
     APP.board                = board
     APP.selected_fields      = []
     APP.highlighted_fields   = []
-    APP.last_start_fields    = [move.start]
-    APP.last_end_fields      = [move.end]
+    APP.last_start_fields    = []  # todo
+    APP.last_end_fields      = []  # todo
     APP.score                = 0
+    APP.depth                = 0
+    APP.time_of_last_move    = time()
+    APP.time_of_last_update  = time()
+    APP.update_id            = randint(0, 10**10)
+    APP.next_moves           = generate_moves(board)
 
-    moves, boards = generate_moves(APP.board)
-    BUFFER.next_moves        = moves
-    BUFFER.next_positions    = boards
-    update_score()
 
+def update_app_data(result: MPResult):
+    if APP.update_id != result.update_id:  # result is irrelevant
+        return
 
-def update_score():
-    global SHARED_FLAG
-
-    SHARED_FLAG.set() # set flag to True
-
-    if not RUNNING_PROCESSES:
-        process = Process(
-            target = score_worker,
-            args   = (UPDATE_QUEUE, TASK_QUEUE, SHARED_FLAG),
-            daemon = True
-        )
-        process.start()
-        RUNNING_PROCESSES.append(process)
-
-    args = (
-        APP.board.pieces[:],
-        APP.board.castles[:],
-        APP.board.en_passant,
-        0 if APP.board.is_white else 1,
-        UPDATE_ID
+    APP.time_of_last_update = time()
+    APP.best_position       =  Board(
+        result.pieces,
+        result.castles,
+        result.en_passant,
+        result.is_white
     )
-    TASK_QUEUE.put(args)
-
-
-
-
+    APP.score = result.score
+    APP.depth = result.depth
 
 
 

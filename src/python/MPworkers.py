@@ -1,92 +1,83 @@
 from PyChess import direct_search
-from time import perf_counter
 from queue import Empty
 from time import sleep
 from multiprocessing import Queue
 from multiprocessing.synchronize import Event as MPEvent
-from globals import Board
+from multiprocessing import Event, Process
+from globals import Board, MPTask, MPResult
+from threading import Lock
+from dataclasses import dataclass
 
 
-def score_worker(
-        update_queue: Queue,
-        task_queue:   Queue,
-        shared_flag:  MPEvent):
 
-    current_task = None
-    depth = 0
+class MPWorker:
+    def __init__(self):
+        self._waiting_task_queue  = Queue()
+        self._finished_task_queue = Queue()
+        self._stop_flag           = Event()
+
+        self._process = Process(
+            target = mp_worker,
+            args   = (self._waiting_task_queue, self._finished_task_queue, self._stop_flag),
+            daemon = True
+        )
+        self._process.start()
+        self._ongoing_tasks = 0
+
+    def is_idle(self) -> bool:
+        return self._ongoing_tasks == 0
+
+    def add_task(self, board, depth, update_id) -> None:
+        self._stop_flag.clear()
+        task = MPTask(
+            board.pieces, board.castles, board.en_passant, board.is_white, depth, update_id
+        )
+        self._ongoing_tasks += 1
+        print(f"{self._ongoing_tasks = }")
+        self._waiting_task_queue.put(task)
+
+    def terminate_all_tasks(self):
+        while True:
+            try:
+                self._waiting_task_queue.get_nowait()
+            except Empty:
+                break
+        self._stop_flag.set()
+
+
+    def get_next_result(self) -> None | MPResult:
+        try:
+            task = self._finished_task_queue.get_nowait()
+        except Empty:
+            return None
+
+        self._ongoing_tasks -= 1
+        print(f"{self._ongoing_tasks = }")
+        return task
+
+
+def mp_worker(
+        waiting_task_queue:  Queue,
+        finished_task_queue: Queue,
+        stop_flag:           MPEvent):
+
+    current_task: MPTask | None = None
 
     while True:
-        print("looping...")
-        # check for new task
-        try:
-            new_task = task_queue.get_nowait()
-            if new_task == "STOP":
-                break
-            current_task = new_task
-            depth = 0
-            shared_flag.clear()  # set value to false
-        except Empty:
-            pass
-
+        try:  # check for new task
+            current_task: MPTask = waiting_task_queue.get_nowait()
+        except Empty: ...
 
         if current_task:
-            pieces, castle_rights, en_passant, color, update_id = current_task
-
-            start = perf_counter()
-
-            print("start calculation...")
-            score, _depth, pieces, castle, en_passant, color = direct_search(pieces, castle_rights, en_passant, color, depth, shared_flag)
-            print("end calculation")
-
-
-            elapsed = perf_counter() - start
-            update = ("eval", (score, depth, elapsed), update_id)
-            update_queue.put(update)
-
-            depth += 1
-            sleep(0.01)  # yield control, don't block too long
-
-
-
-def move_worker(
-        update_queue: Queue,
-        task_queue:   Queue,
-        shared_flag: MPEvent):
-
-    current_task = None
-    depth = 0
-
-    while True:
-        # check for new task
-        try:
-            new_task = task_queue.get_nowait()
-            if new_task == "STOP":
-                break
-            current_task = new_task
-            depth = 0
-            shared_flag.clear()  # set value to false
-        except Empty:
-            pass
-
-
-        if current_task:
-            pieces, castle_rights, en_passant, color, update_id = current_task
-
-            start = perf_counter()
-
-            score, _depth, pieces, castle, en_passant, color = direct_search(pieces, castle_rights, en_passant, color, depth, shared_flag)
-
-            best_position = Board(
-                pieces     = pieces,
-                castles    = castle,
-                en_passant = en_passant,
-                is_white   = color == 0
+            result = direct_search(
+                current_task.pieces,
+                current_task.castles,
+                current_task.en_passant,
+                current_task.is_white,
+                current_task.start_depth,
+                stop_flag
             )
-
-            elapsed = perf_counter() - start
-            update = ("best_position", best_position, update_id)
-            update_queue.put(update)
-
-            depth += 1
-            sleep(0.01)  # yield control, don't block too long
+            result = MPResult(*result, update_id=current_task.update_id)
+            finished_task_queue.put(result)
+        sleep(0.1)  # yield control, don't block too long
 

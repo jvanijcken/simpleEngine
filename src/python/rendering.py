@@ -10,7 +10,7 @@ if __name__ == "__main__":
     from pyglet.clock import schedule_interval
     from pyglet.app import run
     from pyglet.window import Window
-    from app import APP, check_for_app_updates, update_score, square_click
+    from app import APP, game_checks, user_input
 
     SAND_COLOR = (255, 216, 139)
     WHITE = (255, 255, 255)
@@ -176,7 +176,7 @@ if __name__ == "__main__":
         )
         buttons["eval_bar"] = eval_bar
         eval_label = Label(
-            text      = f"depth {APP.eval[1]} → {APP.eval[0]} in {APP.eval[2]:.2f} s",
+            text      = f"depth {APP.depth} → {APP.score} in {APP.time_of_last_update - APP.time_of_last_move:.2f} s",
             font_name = 'consolas',
             font_size = 20,
             x         = eval_bar.x + eval_bar.width  / 2,
@@ -196,9 +196,7 @@ if __name__ == "__main__":
             if sqr.x <= x <= sqr.x + sqr.width and sqr.y <= y <= sqr.y + sqr.height:
                 index = i
 
-        if index:
-            if square_click(index):
-                update_score()
+        if index is not None and user_input(index):
             render_board()
 
 
@@ -211,16 +209,15 @@ if __name__ == "__main__":
 
     @window.event
     def on_resize(width, height):
-        """Recreate the grid when window is resized."""
         render_board()
         return None
 
-    def app_update(dt):
-        if check_for_app_updates():
+    game_checks()
+    render_board()
+
+    def cmd(dt):
+        if game_checks():
             render_board()
 
-    update_score()
-    render_board()
-    schedule_interval(app_update, 1/60)
-
+    schedule_interval(cmd, 1/60)
     run()

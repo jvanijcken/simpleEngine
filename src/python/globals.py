@@ -85,10 +85,10 @@ INF = 10000000
 
 @dataclass
 class Board:
-    pieces: list[int]
-    castles: list[int]
-    en_passant: int
-    is_white: bool
+    pieces     : list[int]
+    castles    : list[int]
+    en_passant : int
+    is_white   : bool
 
 
 @dataclass
@@ -100,4 +100,31 @@ class Move:
     captured_piece: int
     is_white: bool
     castle_type: int = NO_CASTLE
+
+
+@dataclass
+class MPTask:
+    pieces      : list[int]
+    castles     : list[int]
+    en_passant  : int
+    is_white    : bool
+    start_depth : int
+    update_id   : int
+
+
+@dataclass
+class MPResult:
+    pieces                  : list[int]
+    castles                 : list[int]
+    en_passant              : int
+    is_white                : bool
+    depth                   : int
+    score                   : int
+    calculation_interrupted : bool
+    update_id               : int
+
+
+
+
+
 

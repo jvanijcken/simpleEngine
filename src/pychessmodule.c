@@ -13,6 +13,8 @@
 #include "../include/zobristHashing.h"
 #include "../include/boardEvaluation.h"
 
+#include "../testing/debugTools.h"
+
 pthread_mutex_t module_mutex = PTHREAD_MUTEX_INITIALIZER;
 bool TERMINATE_TIME_CHECKER = false;
 
@@ -57,7 +59,7 @@ int evaluateBoard(const Board *pBoard) {
 }
 
 
-Board* convertArgsToBoard(PyObject* pieces_list, PyObject* castle_rights_list, const int en_passant, const int color, Board* result) {
+Board* convertArgsToBoard(PyObject* pieces_list, PyObject* castle_rights_list, const int en_passant, PyObject* is_white, Board* result) {
     // --- Validate input types ---
     if (!PyList_Check(pieces_list)) {
         PyErr_SetString(PyExc_TypeError, "pieces must be a list of ints");
@@ -67,6 +69,11 @@ Board* convertArgsToBoard(PyObject* pieces_list, PyObject* castle_rights_list, c
         PyErr_SetString(PyExc_TypeError, "castle_rights must be a list of ints");
         return NULL;
     }
+    if (!PyBool_Check(is_white)) {
+        PyErr_SetString(PyExc_TypeError, "is_white must be a bool");
+        return NULL;
+    }
+    const int color = (is_white == Py_True)? 0 : 1;
 
     // Convert pieces list → C array
     // add pieces
@@ -111,7 +118,6 @@ Board* convertArgsToBoard(PyObject* pieces_list, PyObject* castle_rights_list, c
 
 
 PyObject* convertBoardToArgs(const Board* board, const int color) {
-    printf("converting Board to Args...\n");
     if (!board) {
         PyErr_SetString(PyExc_ValueError, "board is NULL");
         return NULL;
@@ -162,14 +168,12 @@ PyObject* convertBoardToArgs(const Board* board, const int color) {
     }
 
     // --- Create final tuple: (pieces_list, castle_rights_list, en_passant, color) ---
+    const bool is_white = color == 0;
     PyObject *result = PyTuple_New(4);
     PyTuple_SET_ITEM(result, 0, pieces_list);          // Steals ref
     PyTuple_SET_ITEM(result, 1, castle_rights_list);   // Steals ref
     PyTuple_SET_ITEM(result, 2, PyLong_FromLong(en_passant));
-    PyTuple_SET_ITEM(result, 3, PyLong_FromLong(color));
-
-    printf("finished converting Board to Args...\n");
-
+    PyTuple_SET_ITEM(result, 3, PyBool_FromLong(is_white));
     return result;
 }
 
@@ -182,27 +186,32 @@ iterative_deepening_search(PyObject *self, PyObject *args)
     PyObject *pieces_list        = NULL;
     PyObject *castle_rights_list = NULL;
     int en_passant               = 0;
-    int color                    = 0;
+    PyObject *is_white           = NULL;
     int maxDepth                 = 0;
     PyObject *stop_flag          = NULL;
 
-    if (!PyArg_ParseTuple(args, "OOiii", &pieces_list, &castle_rights_list, &en_passant, &color, &maxDepth)) {
+    if (!PyArg_ParseTuple(args, "OOiOiO)", &pieces_list, &castle_rights_list, &en_passant, &is_white, &maxDepth, &stop_flag)) {
         return NULL;
     }
     Py_XINCREF(stop_flag);  // keep this object alive!
     Board board = {0};
-    if (!convertArgsToBoard(pieces_list, castle_rights_list, en_passant, color, &board)) {
+    if (!convertArgsToBoard(pieces_list, castle_rights_list, en_passant, is_white, &board)) {
         return NULL;
     };
+    if (!PyBool_Check(is_white)) {
+        PyErr_SetString(PyExc_TypeError, "is_white must be a bool");
+        return NULL;
+    }
+    const int color = (is_white == Py_True)? 0 : 1;
 
     const Result result =  iterativeDeepeningSearch(&board, maxDepth, color, stop_flag);
 
     const int opposite_color = (color)? 0 : 1;
     PyObject* board_args = convertBoardToArgs(&result.bestMove, opposite_color);
-    PyObject* meta = Py_BuildValue("(ii)", result.score, result.depth);
+    PyObject* meta = Py_BuildValue("(iiO)", result.depth, result.score,  PyBool_FromLong(result.calculationsInterrupted));
 
     Py_DECREF(stop_flag);
-    return PySequence_Concat(meta, board_args);
+    return PySequence_Concat(board_args, meta);
 }
 
 
@@ -210,41 +219,35 @@ iterative_deepening_search(PyObject *self, PyObject *args)
 static PyObject *
 direct_search(PyObject *self, PyObject *args)
 {
-    PyObject *pieces_list = NULL;
+    PyObject *pieces_list        = NULL;
     PyObject *castle_rights_list = NULL;
-    int en_passant = 0;
-    int color = 0;
-    int depth = 0;
-    PyObject *stop_flag = NULL;
+    int en_passant               = 0;
+    PyObject *is_white           = NULL;
+    int depth                    = 0;
+    PyObject *stop_flag          = NULL;
 
-    // Parse Python arguments: (pieces, en_passant, castle_rights, color, maxDepth, duration_seconds)
-    if (!PyArg_ParseTuple(
-            args, "OOiiiO",
-            &pieces_list,
-            &castle_rights_list,
-            &en_passant,
-            &color,
-            &depth,
-            &stop_flag))
-    {
+    if (!PyArg_ParseTuple(args, "OOiOiO", &pieces_list, &castle_rights_list, &en_passant, &is_white, &depth, &stop_flag)) {
         return NULL;
     }
     Py_XINCREF(stop_flag);  // keep this object alive!
     Board board = {0};
-    if (!convertArgsToBoard(pieces_list, castle_rights_list, en_passant, color, &board)) {
+    if (!convertArgsToBoard(pieces_list, castle_rights_list, en_passant, is_white, &board)) {
         return NULL;
     };
-
-    printf("starting calculation in C...\n");
+    if (!PyBool_Check(is_white)) {
+        PyErr_SetString(PyExc_TypeError, "is_white must be a bool");
+        return NULL;
+    }
+    const int color = (is_white == Py_True)? 0 : 1;
     const Result result = directSearch(&board, depth, color, stop_flag);
-    printf("end calculation in C...\n");
 
     const int opposite_color = (color)? 0 : 1;
     PyObject* board_args = convertBoardToArgs(&result.bestMove, opposite_color);
-    PyObject* meta = Py_BuildValue("(ii)", result.score, result.depth);
+
+    PyObject* meta = Py_BuildValue("(iiO)", result.depth, result.score,  PyBool_FromLong(result.calculationsInterrupted));
 
     Py_DECREF(stop_flag);
-    return PySequence_Concat(meta, board_args);
+    return PySequence_Concat(board_args, meta);
 }
 
 
@@ -252,27 +255,12 @@ direct_search(PyObject *self, PyObject *args)
 
 // MODULE
 
-
-// IMPORTABLE FUNCTION
-static PyObject *
-force_stop_calculations(PyObject *self, PyObject *args)
-{
-    forceStopCalculations();
-    Py_RETURN_NONE;
-}
-
 static PyMethodDef PyChessMethods[] = {
     {
         "iterative_deepening_search",
         iterative_deepening_search,
         METH_VARARGS,
         "Call iterative_deepening_search function"
-    },
-    {
-        "force_stop_calculations",
-        force_stop_calculations,
-        METH_VARARGS,
-        "Call force_stop_calculations function"
     },
     {
         "direct_search",
@@ -289,9 +277,9 @@ static PyMethodDef PyChessMethods[] = {
 static PyModuleDef pychessmodule = {
     PyModuleDef_HEAD_INIT,
     "PyChess",
-    "Python Chess module with Board object",
+    "Python Chess module",
     -1,
-    PyChessMethods,  // <- attach methods here!
+    PyChessMethods,
     NULL, NULL, NULL, NULL
 };
 

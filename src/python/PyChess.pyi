@@ -1,7 +1,5 @@
 # PyChess.pyi
 
-from typing import List, Tuple
-
 
 def iterative_deepening_search(
         pieces: list[int],
@@ -10,7 +8,7 @@ def iterative_deepening_search(
         color: int,
         max_depth: int,
         flag,
-) -> tuple[int, int, list[int], list[int], int, int]: ...
+) -> tuple[list[int], list[int], int, bool, int, int, bool]: ...
 
 
 def direct_search(
@@ -20,7 +18,5 @@ def direct_search(
         color: int,
         depth: int,
         flag
-) -> tuple[int, int, list[int], list[int], int, int]: ...
+) -> tuple[list[int], list[int], int, bool, int, int, bool]: ...
 
-
-def force_stop_calculations() -> None: ...

@@ -12,9 +12,9 @@ typedef struct {
     int score;
     int depth;
     Board bestMove;
+    bool calculationsInterrupted;
 } Result;
 
-void forceStopCalculations();
 Result iterativeDeepeningSearch(Board* board, int depth, int color, PyObject* stop);
 Result directSearch(Board* board, int depth, int color, PyObject* stop);
 

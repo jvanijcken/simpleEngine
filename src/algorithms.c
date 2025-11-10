@@ -18,6 +18,8 @@
 #include "../include/moveGeneration.h"
 #include "../include/algorithms.h"
 
+#include "../testing/debugTools.h"
+
 bool UNWIND = true;
 bool CALCULATION_FINISHED = true;
 pthread_mutex_t time_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -110,7 +112,7 @@ int (*sortBestMovesFirst(const int color))(const void*, const void*) {
     return color? &sortDescBlack : &sortDescWhite;
 }
 
-int principalVariationSearch(const Board* board, const int depth, int alpha, const int beta, const int color, Board* pBestMove) {
+int principalVariationSearch(const Board* board, const int depth, int alpha, const int beta, const int color) {
 
     // check if cached
     const TTEntry* entry = probeTT(board->hash);
@@ -143,23 +145,22 @@ int principalVariationSearch(const Board* board, const int depth, int alpha, con
 
     for (int i = 0; i < nrOfMoves; i++) {
         int score;
-        Board bestNextMove = {0};
         if (i == 0) {
             // principal search (presumed best move)
-            score = - principalVariationSearch(&results[i], depth - 1, - beta     , -alpha, !color, &bestNextMove);
+            score = - principalVariationSearch(&results[i], depth - 1, - beta     , -alpha, !color);
         }
         else {
             // scout search (cheap)
-            score = - principalVariationSearch(&results[i], depth - 1, - alpha - 1, -alpha, !color, &bestNextMove);
+            score = - principalVariationSearch(&results[i], depth - 1, - alpha - 1, -alpha, !color);
 
             if (alpha < score && score < beta) {  // use full search if scout failed (presumed best move wasn't the best move)
-                score = - principalVariationSearch(&results[i], depth - 1, -beta, -alpha, !color, &bestNextMove);
+                score = - principalVariationSearch(&results[i], depth - 1, -beta, -alpha, !color);
             }
         }
 
+        // fixme cached results dont give the best board
         if (score > alpha) {
             alpha = score;
-            *pBestMove = results[i];
         } // save if best score & save best move
         if (alpha >= beta) {
             break;
@@ -175,6 +176,34 @@ int principalVariationSearch(const Board* board, const int depth, int alpha, con
     else if (alpha >= beta) flag = 1;
     storeTT(board->hash, depth, alpha, flag);
 
+    return alpha;
+}
+
+int movePrincipalVariationSearch(const Board* board, const int depth, int alpha, const int beta, const int color, Board* pBestMove) {
+    // we cant check if cached, because that wiuldnt give us a move
+
+    Board results[512];
+    const int nrOfMoves = generateMoves(board, results, false, color);
+
+    // checkmate and stalemate
+    *pBestMove = *board;
+    if (nrOfMoves == 0 && isInCheck(board, color)) return (-CHECKMATE - depth);
+    if (nrOfMoves == 0)                            return 0;
+
+    // order with estimated best moves first
+    qsort(results, nrOfMoves, sizeof(Board), sortBestMovesFirst(color));
+
+    for (int i = 0; i < nrOfMoves; i++) {
+        const int score = - principalVariationSearch(&results[i], depth - 1, - beta, -alpha, !color);
+
+        if (score > alpha) {
+            alpha = score;
+            *pBestMove = results[i];
+        } // save if best score & save best move
+        if (getIsTimeUp()) {
+            return alpha;
+        }
+    }
     return alpha;
 }
 
@@ -197,7 +226,7 @@ void* threadedIDS(void* arg) {
         if (getIsTimeUp()) {  // check if time is up
             break;
         }
-        score = principalVariationSearch(args->pBoard, depth, -INF, INF, args->color, &bestMove);
+        score = movePrincipalVariationSearch(args->pBoard, depth, -INF, INF, args->color, &bestMove);
 
         if (score >= CHECKMATE || score <= -CHECKMATE) {  // if checkmate is found you can stop
             break;
@@ -231,6 +260,7 @@ Result iterativeDeepeningSearch(Board* board, const int depth, const int color, 
 
     pthread_create(&monitor_thread, NULL, threadedIDS, args);
 
+    bool isCalculationInterrupted = false;
     while (true) {
 
         PyGILState_STATE gstate = PyGILState_Ensure();
@@ -244,6 +274,7 @@ Result iterativeDeepeningSearch(Board* board, const int depth, const int color, 
         }
         // check for max time
         if (should_stop) {
+            isCalculationInterrupted = true;
             break;
         }
 
@@ -256,16 +287,12 @@ Result iterativeDeepeningSearch(Board* board, const int depth, const int color, 
     // Join the monitor thread and retrieve result
     void* finalScore;
     pthread_join(monitor_thread, &finalScore);
-    const Result result = *(Result*)(finalScore);
+    Result result = *(Result*)(finalScore);
+    result.calculationsInterrupted = isCalculationInterrupted;
     free(finalScore);
     free(args);
 
     return result;
-}
-
-
-void forceStopCalculations() {
-    setIsTimeUp(true);
 }
 
 void* threadedDS(void* arg) {
@@ -274,7 +301,8 @@ void* threadedDS(void* arg) {
     Board bestMove = {0};
     Result* pResult  = malloc(sizeof(Result));
 
-    pResult->score = principalVariationSearch(args->pBoard, args->depth, -INF, INF, args->color, &bestMove);
+    const int sign = args->color? -1 : 1;
+    pResult->score = sign * movePrincipalVariationSearch(args->pBoard, args->depth, -INF, INF, args->color, &bestMove);
     pResult->depth = args->depth;
     pResult->bestMove = bestMove;
 
@@ -300,6 +328,7 @@ Result directSearch(Board* board, const int depth, const int color, PyObject* st
 
     pthread_create(&monitor_thread, NULL, threadedDS, args);
 
+    bool isCalculationInterrupted = false;
     while (true) {
 
         PyGILState_STATE gstate = PyGILState_Ensure();
@@ -312,6 +341,7 @@ Result directSearch(Board* board, const int depth, const int color, PyObject* st
             break;
         }
         if (should_stop) {
+            isCalculationInterrupted = true;
             break;
         }
         usleep(100000); // sleep 100ms to avoid busy spinning
@@ -323,7 +353,8 @@ Result directSearch(Board* board, const int depth, const int color, PyObject* st
     // Join the monitor thread and retrieve result
     void* finalScore;
     pthread_join(monitor_thread, &finalScore);
-    const Result result = *(Result*)(finalScore);
+    Result result = *(Result*)(finalScore);
+    result.calculationsInterrupted = isCalculationInterrupted;
     free(finalScore);
     free(args);
 

@@ -139,11 +139,10 @@ def general_piece_moves(board: Board, directions: list[tuple], max_range: int, i
     return result
 
 
-def generate_moves(board: Board) -> tuple[list[Move], list[Board]]:
+def generate_moves(board: Board) -> dict[tuple[int, int], Board]:
     own_pieces   =  WHITE_PIECES if board.is_white else BLACK_PIECES
 
-    positions: list[Board] = []
-    moves:     list[Move]  = []
+    result: dict[tuple[int, int], Board] = {}
 
     for start in range(64):
         start_piece: int = board.pieces[start]
@@ -174,10 +173,9 @@ def generate_moves(board: Board) -> tuple[list[Move], list[Board]]:
                 if can_be_attacked(new_position, king_position): ... # invalid position
                     #continue
 
-                positions.append(new_position)
-                moves.append(move)
+                result[(start, end)] = new_position
 
-    return moves, positions
+    return result
 
 
 def move_piece(board: Board, move: Move) -> Board:
