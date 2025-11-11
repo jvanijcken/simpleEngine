@@ -104,20 +104,14 @@ class Move:
 
 @dataclass
 class MPTask:
-    pieces      : list[int]
-    castles     : list[int]
-    en_passant  : int
-    is_white    : bool
+    board       : Board
     start_depth : int
     update_id   : int
 
 
 @dataclass
 class MPResult:
-    pieces                  : list[int]
-    castles                 : list[int]
-    en_passant              : int
-    is_white                : bool
+    board                   : Board
     depth                   : int
     score                   : int
     calculation_interrupted : bool

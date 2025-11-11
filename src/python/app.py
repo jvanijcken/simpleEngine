@@ -4,8 +4,9 @@ from globals import *
 from dataclasses import dataclass
 from random import randint
 from multiprocessing import Queue, Process, Event
-from MPworkers import MPWorker
+from MPworkers import Scheduler, MPWorker
 from time import time
+from threading import Lock
 
 
 START_PIECES = [
@@ -25,6 +26,7 @@ START_BOARD = Board(
     is_white   = True
 )
 
+APP_LOCK = Lock()
 
 @dataclass
 class App:
@@ -54,6 +56,15 @@ class App:
 
     update_id               : int
 
+    def __setattr__(self, key, value):
+        with APP_LOCK:
+            object.__setattr__(self, key, value)
+
+    def __getattribute__(self, item):
+        with APP_LOCK:
+            return object.__getattribute__(self, item)
+
+
 
 APP = App(  # this is read by UI
     board                   = START_BOARD,
@@ -79,10 +90,11 @@ APP = App(  # this is read by UI
     update_id               = randint(0, 10**10)
 )
 
-MP_WORKER = MPWorker()
 
+schedule = Scheduler()
+worker = MPWorker()
 
-def user_input(tile_selected=None) -> bool:
+def user_input(tile_selected):
     is_legal_move         : bool      = tile_selected in APP.highlighted_fields
 
     piece                 : int       = APP.board.pieces[tile_selected]
@@ -90,55 +102,46 @@ def user_input(tile_selected=None) -> bool:
     is_own_piece_selected : bool      = piece in own_pieces
 
     if is_legal_move:
-        new_position = get_new_position(tile_selected)
+        start, end = APP.selected_fields[0], tile_selected
+        new_position = APP.next_moves[(start, end)]
+        worker.abort()
         make_move(new_position)
-        MP_WORKER.terminate_all_tasks()
-        return True
 
-    if is_own_piece_selected:
-        select_piece(tile_selected)
-        return True
+
+    elif is_own_piece_selected:
+        APP.selected_fields    = [tile_selected]
+        APP.highlighted_fields = [end for start, end in APP.next_moves if start == tile_selected]
 
     else:  # clicked on a non-active piece
-        deselect_piece()
-        return True
+        APP.selected_fields    = []
+        APP.highlighted_fields = []
 
 
-def game_checks() -> bool:
-    if MP_WORKER.is_idle():
-        MP_WORKER.add_task(APP.board, APP.depth + 1, APP.update_id)
-        return False
-
-    if result := MP_WORKER.get_next_result():
-        update_app_data(result)
-        return True
-
-    return False
-
-def deselect_piece():
-    APP.selected_fields    = []
-    APP.highlighted_fields = []
-
-
-def select_piece(index):
-    APP.selected_fields    = [index]
-    APP.highlighted_fields = [end for start, end in APP.next_moves if start == index]
-
-
-def get_new_position(index) -> Board:
+def game_checks():
     try:
-        start, end = APP.selected_fields[0], index
-    except IndexError:
-        raise ValueError("trying to make move, but no piece selected")
-    try:
-        return APP.next_moves[(start, end)]
-    except KeyError:
-        raise ValueError("move selected was not in list of legal moves")
+        schedule(calc)
+        print("SUCC")
+    except ValueError:
+        print("BUSS")
+
+
+def calc():
+    worker.initiate()
+    d = APP.depth + 0
+    print(f"scheduling with depth {d}")
+    result = worker.evaluate(APP.board, APP.depth + 1, APP.update_id)
+    print(f"finished with depth {d}")
+
+    if APP.update_id != result.update_id:
+        return
+
+    APP.best_position       = result.board
+    APP.score               = result.score
+    APP.depth               = result.depth
+    APP.time_of_last_update = time()
 
 
 def make_move(board: Board):
-    APP.update_id = randint(0, 10**10)
-
     APP.board                = board
     APP.selected_fields      = []
     APP.highlighted_fields   = []
@@ -151,20 +154,6 @@ def make_move(board: Board):
     APP.update_id            = randint(0, 10**10)
     APP.next_moves           = generate_moves(board)
 
-
-def update_app_data(result: MPResult):
-    if APP.update_id != result.update_id:  # result is irrelevant
-        return
-
-    APP.time_of_last_update = time()
-    APP.best_position       =  Board(
-        result.pieces,
-        result.castles,
-        result.en_passant,
-        result.is_white
-    )
-    APP.score = result.score
-    APP.depth = result.depth
 
 
 

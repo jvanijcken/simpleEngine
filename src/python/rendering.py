@@ -11,6 +11,7 @@ if __name__ == "__main__":
     from pyglet.app import run
     from pyglet.window import Window
     from app import APP, game_checks, user_input
+    from time import time
 
     SAND_COLOR = (255, 216, 139)
     WHITE = (255, 255, 255)
@@ -176,7 +177,7 @@ if __name__ == "__main__":
         )
         buttons["eval_bar"] = eval_bar
         eval_label = Label(
-            text      = f"depth {APP.depth} → {APP.score} in {APP.time_of_last_update - APP.time_of_last_move:.2f} s",
+            text      = f"depth {APP.depth} → {APP.score} in {APP.time_of_last_update - APP.time_of_last_move:.2f} s [{time():.2f}]",
             font_name = 'consolas',
             font_size = 20,
             x         = eval_bar.x + eval_bar.width  / 2,
@@ -196,8 +197,8 @@ if __name__ == "__main__":
             if sqr.x <= x <= sqr.x + sqr.width and sqr.y <= y <= sqr.y + sqr.height:
                 index = i
 
-        if index is not None and user_input(index):
-            render_board()
+        if index is not None:
+            user_input(index)
 
 
     @window.event
@@ -212,12 +213,6 @@ if __name__ == "__main__":
         render_board()
         return None
 
-    game_checks()
-    render_board()
 
-    def cmd(dt):
-        if game_checks():
-            render_board()
-
-    schedule_interval(cmd, 1/60)
+    schedule_interval(lambda dt: (game_checks(), render_board()), 1/60)
     run()

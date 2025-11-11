@@ -1,3 +1,5 @@
+import time
+
 from PyChess import direct_search
 from queue import Empty
 from time import sleep
@@ -5,9 +7,7 @@ from multiprocessing import Queue
 from multiprocessing.synchronize import Event as MPEvent
 from multiprocessing import Event, Process
 from globals import Board, MPTask, MPResult
-from threading import Lock
-from dataclasses import dataclass
-
+from threading import Thread, Lock, current_thread, main_thread
 
 
 class MPWorker:
@@ -16,68 +16,106 @@ class MPWorker:
         self._finished_task_queue = Queue()
         self._stop_flag           = Event()
 
-        self._process = Process(
-            target = mp_worker,
-            args   = (self._waiting_task_queue, self._finished_task_queue, self._stop_flag),
+        _process = Process(
+            target = mp_process,
+            args   = (
+                self._waiting_task_queue,
+                self._finished_task_queue,
+                self._stop_flag),
             daemon = True
         )
-        self._process.start()
-        self._ongoing_tasks = 0
+        _process.start()
 
-    def is_idle(self) -> bool:
-        return self._ongoing_tasks == 0
-
-    def add_task(self, board, depth, update_id) -> None:
-        self._stop_flag.clear()
-        task = MPTask(
-            board.pieces, board.castles, board.en_passant, board.is_white, depth, update_id
-        )
-        self._ongoing_tasks += 1
-        print(f"{self._ongoing_tasks = }")
+    def evaluate(self, board, depth, identity) -> MPResult:
+        """ this function is blocking for as long as the calculation takes """
+        task = MPTask(board, depth, identity)
         self._waiting_task_queue.put(task)
+        return self._finished_task_queue.get()
 
-    def terminate_all_tasks(self):
-        while True:
-            try:
-                self._waiting_task_queue.get_nowait()
-            except Empty:
-                break
+    def abort(self):
+        """ this function terminates ongoing calculations """
         self._stop_flag.set()
 
-
-    def get_next_result(self) -> None | MPResult:
-        try:
-            task = self._finished_task_queue.get_nowait()
-        except Empty:
-            return None
-
-        self._ongoing_tasks -= 1
-        print(f"{self._ongoing_tasks = }")
-        return task
+    def initiate(self):
+        """ this function makes sure calculations aren't terminated anymore """
+        self._stop_flag.clear()
 
 
-def mp_worker(
+
+def mp_process(
         waiting_task_queue:  Queue,
         finished_task_queue: Queue,
         stop_flag:           MPEvent):
 
-    current_task: MPTask | None = None
-
     while True:
+        sleep(1 / 120)  # be idle to save calculation cost
         try:  # check for new task
             current_task: MPTask = waiting_task_queue.get_nowait()
-        except Empty: ...
-
-        if current_task:
             result = direct_search(
-                current_task.pieces,
-                current_task.castles,
-                current_task.en_passant,
-                current_task.is_white,
+                current_task.board.pieces,
+                current_task.board.castles,
+                current_task.board.en_passant,
+                current_task.board.is_white,
                 current_task.start_depth,
                 stop_flag
-            )
-            result = MPResult(*result, update_id=current_task.update_id)
+                )
+            pieces, castles, en_passant, is_white, depth, score, calculation_interrupted = result
+            board  = Board(pieces, castles, en_passant, is_white)
+            result = MPResult(board, depth, score, calculation_interrupted, current_task.update_id)
             finished_task_queue.put(result)
-        sleep(0.1)  # yield control, don't block too long
+
+        except Empty:
+            continue
+
+
+
+class Scheduler:
+    def __init__(self):
+        self._function_queue  = Queue()
+        self._worker = Thread(
+            target=scheduler_thread,
+            args=(self._function_queue, self._lock, self._unlock),
+            daemon=True
+        )
+        self._worker.start()
+        self._locked = False
+        self._lock = Lock()
+
+    def _lock(self):
+        """ used by my thread to signal it is busy with a task """
+        with self._lock:
+            self._locked = True
+
+    def _unlock(self):
+        """ used by my thread to signal it is finished with its task and can receive a new task """
+        with self._lock:
+            self._locked = False
+
+    def __call__(self, function):
+        """ add a new task for worker, will raise ValueError if worker is occupied """
+        assert (current_thread() == main_thread())
+
+        with self._lock:
+            if not self._function_queue.empty():  # some task is waiting already
+                raise ValueError("wait until worker is finished with previous task")
+            if self._locked:                      # worker is busy
+                raise ValueError("wait until worker is finished with previous task")
+
+        self._function_queue.put(function)
+
+
+def scheduler_thread(function_queue: Queue, lock, unlock):
+    while True:
+        time.sleep(1 / 120)
+
+        # work on a task
+        lock()
+        try:
+            function = function_queue.get_nowait()
+            function()
+        except Empty:
+            ...
+        unlock()
+
+
 
