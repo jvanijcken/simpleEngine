@@ -32,9 +32,18 @@ class MPWorker:
         self._waiting_task_queue.put(task)
         return self._finished_task_queue.get()
 
-    def abort(self):
+    def abort(self, blocking=False):
         """ this function terminates ongoing calculations """
         self._stop_flag.set()
+
+        if not blocking:
+            return
+
+        while True:
+            if ...:
+                return
+            sleep(1 / 120)
+
 
     def initiate(self):
         """ this function makes sure calculations aren't terminated anymore """
@@ -97,11 +106,21 @@ class Scheduler:
 
         with self._lock:
             if not self._function_queue.empty():  # some task is waiting already
-                raise ValueError("wait until worker is finished with previous task")
+                raise ValueError("another task waiting, wait until worker is finished with previous task")
             if self._locked:                      # worker is busy
-                raise ValueError("wait until worker is finished with previous task")
+                raise ValueError("worker busy, wait until worker is finished with previous task")
 
         self._function_queue.put(function)
+
+    def wait_after_task_finished(self):
+        """ blocks until worker isn't busy anymore """
+        while True:
+            sleep(1 / 120)
+            if not self._locked:
+                break
+
+
+
 
 
 def scheduler_thread(function_queue: Queue, lock, unlock):

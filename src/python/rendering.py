@@ -10,7 +10,7 @@ if __name__ == "__main__":
     from pyglet.clock import schedule_interval
     from pyglet.app import run
     from pyglet.window import Window
-    from app import APP, game_checks, user_input
+    from app import APP, game_checks, user_input, APP_LOCK
     from time import time
 
     SAND_COLOR = (255, 216, 139)
@@ -21,7 +21,9 @@ if __name__ == "__main__":
     rows = 8
     cols = 8
     square_size = 60
-    background_color = (0.1, 0.1, 0.1, 1.0)  # RGBA, 0-1 floats; dark gray
+    background_color = (0.1, 0.1, 0.1, 1.0)  # RGBA, 0-1 floats; dark gray\
+
+    CYCLE_NR = 0
 
     window = Window(8 * 60 + 200, 8 * 60 + 200, "Pyglet Grid Example", resizable=True)
 
@@ -176,8 +178,9 @@ if __name__ == "__main__":
             batch  = batch
         )
         buttons["eval_bar"] = eval_bar
+        bar = ['|', '/', '—', '\\'][CYCLE_NR // 3 % 4]
         eval_label = Label(
-            text      = f"depth {APP.depth} → {APP.score} in {APP.time_of_last_update - APP.time_of_last_move:.2f} s [{time():.2f}]",
+            text      = f"depth {APP.depth} → {APP.score} in {APP.time_of_last_update - APP.time_of_last_move:.2f} s [{bar}]",
             font_name = 'consolas',
             font_size = 20,
             x         = eval_bar.x + eval_bar.width  / 2,
@@ -210,9 +213,17 @@ if __name__ == "__main__":
 
     @window.event
     def on_resize(width, height):
-        render_board()
+        with APP_LOCK:
+            render_board()
         return None
 
+    def interval(dt):
+        global CYCLE_NR
+        game_checks()
+        with APP_LOCK:
+            render_board()
+        CYCLE_NR += 1
 
-    schedule_interval(lambda dt: (game_checks(), render_board()), 1/60)
+
+    schedule_interval(interval, 1/60)
     run()

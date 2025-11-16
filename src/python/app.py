@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from random import randint
 from multiprocessing import Queue, Process, Event
 from MPworkers import Scheduler, MPWorker
-from time import time
+from time import time, sleep
 from threading import Lock
 
 
@@ -30,6 +30,7 @@ APP_LOCK = Lock()
 
 @dataclass
 class App:
+    """ holds all the state of the app, and is the only thing the app rendering is based on """
     board                   : Board
 
     # UI board info
@@ -56,15 +57,6 @@ class App:
 
     update_id               : int
 
-    def __setattr__(self, key, value):
-        with APP_LOCK:
-            object.__setattr__(self, key, value)
-
-    def __getattribute__(self, item):
-        with APP_LOCK:
-            return object.__getattribute__(self, item)
-
-
 
 APP = App(  # this is read by UI
     board                   = START_BOARD,
@@ -80,7 +72,7 @@ APP = App(  # this is read by UI
     depth                   = 0,
     move_nr                 = 0,
 
-    white_player_cpu        = True,
+    white_player_cpu        = False,
     black_player_cpu        = False,
     cpu_move_time_sec       = 2,
 
@@ -91,58 +83,121 @@ APP = App(  # this is read by UI
 )
 
 
-schedule = Scheduler()
+schedule_eval = Scheduler()
+schedule_move = Scheduler()
 worker = MPWorker()
 
 def user_input(tile_selected):
-    is_legal_move         : bool      = tile_selected in APP.highlighted_fields
+    """ interprets user inputs and handles corresponding app actions"""
+    with APP_LOCK:
+        if APP.board.is_white:
+            if APP.white_player_cpu:
+                return  # no player moves available because cpu makes the move
+        else:
+            if APP.black_player_cpu:
+                return  # no player moves available because cpu makes the move
 
-    piece                 : int       = APP.board.pieces[tile_selected]
-    own_pieces            : list[int] = [0, 1, 2, 3, 4, 5] if APP.board.is_white else [6, 7, 8, 9, 10, 11]
-    is_own_piece_selected : bool      = piece in own_pieces
+        is_legal_move         : bool      = tile_selected in APP.highlighted_fields
 
-    if is_legal_move:
-        start, end = APP.selected_fields[0], tile_selected
-        new_position = APP.next_moves[(start, end)]
-        worker.abort()
-        make_move(new_position)
+        piece                 : int       = APP.board.pieces[tile_selected]
+        own_pieces            : list[int] = [0, 1, 2, 3, 4, 5] if APP.board.is_white else [6, 7, 8, 9, 10, 11]
+        is_own_piece_selected : bool      = piece in own_pieces
 
+        # make move
+        if is_legal_move:
+            start, end = APP.selected_fields[0], tile_selected
+            new_position = APP.next_moves[(start, end)]
+            worker.abort()
+            make_move(new_position)
 
-    elif is_own_piece_selected:
-        APP.selected_fields    = [tile_selected]
-        APP.highlighted_fields = [end for start, end in APP.next_moves if start == tile_selected]
+        # select my own piece
+        elif is_own_piece_selected:
+            APP.selected_fields    = [tile_selected]
+            APP.highlighted_fields = [end for start, end in APP.next_moves if start == tile_selected]
 
-    else:  # clicked on a non-active piece
-        APP.selected_fields    = []
-        APP.highlighted_fields = []
+        # clicked on a non-active piece
+        else:
+            APP.selected_fields    = []
+            APP.highlighted_fields = []
 
 
 def game_checks():
+    """ should run frequently to initiate evaluation calculations and cpu moves"""
     try:
-        schedule(calc)
-        print("SUCC")
-    except ValueError:
-        print("BUSS")
+        schedule_move(cpu_move)
+    except ValueError as e:
+        ...
+
+    try:
+        schedule_eval(calc)
+    except ValueError as e:
+        ...
+
+
 
 
 def calc():
+    """ goes through the process of calculating the evaluation of a certain position, should be run in a Scheduler """
     worker.initiate()
-    d = APP.depth + 0
-    print(f"scheduling with depth {d}")
     result = worker.evaluate(APP.board, APP.depth + 1, APP.update_id)
-    print(f"finished with depth {d}")
 
-    if APP.update_id != result.update_id:
-        return
+    with APP_LOCK:
+        if APP.update_id != result.update_id:
+            return
 
-    APP.best_position       = result.board
-    APP.score               = result.score
-    APP.depth               = result.depth
-    APP.time_of_last_update = time()
+        APP.best_position       = result.board
+        APP.score               = result.score
+        APP.depth               = result.depth
+        APP.time_of_last_update = time()
+
+
+def cpu_move():
+    """  makes sure the engine thinks for a certain amount of seconds before picking the best move"""
+    start = time()
+    update_id = APP.update_id + 0  # copy update_id ( +0 is important!)
+
+    while True:
+        sleep(1 / 120)
+
+        # check if I can stop waiting
+        if APP.board.is_white:
+            if not APP.white_player_cpu:  # no active white CPU
+                return
+        else:
+            if not APP.black_player_cpu:  # no active black CPU
+                return
+
+        if APP.update_id != update_id:  # new move made
+            return
+
+        with APP_LOCK:
+            # calculation time is up
+            if time() - start < APP.cpu_move_time_sec:
+                continue
+            if APP.depth < 7:
+                print("no sufficient depth yet")
+                continue
+
+        worker.abort()  # signal mp_worker to stop calculating
+        schedule_eval.wait_after_task_finished()  # wait on the other thread
+
+        with APP_LOCK:  # prevent data from changing last moment
+            if APP.update_id != update_id:  # check for last moment change
+                print("move process expired")
+                return
+
+            if APP.best_position is None:  # check if there is some best position
+                print("no best position found")
+                return
+
+            make_move(APP.best_position)  # move
+        break  # stop the loop
 
 
 def make_move(board: Board):
+    """ handle all app changes associated with a new board """
     APP.board                = board
+    APP.best_position        = None
     APP.selected_fields      = []
     APP.highlighted_fields   = []
     APP.last_start_fields    = []  # todo
@@ -153,12 +208,3 @@ def make_move(board: Board):
     APP.time_of_last_update  = time()
     APP.update_id            = randint(0, 10**10)
     APP.next_moves           = generate_moves(board)
-
-
-
-
-
-
-
-
-
