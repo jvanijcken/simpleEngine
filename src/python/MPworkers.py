@@ -68,9 +68,9 @@ def mp_process(
                 current_task.start_depth,
                 stop_flag
                 )
-            pieces, castles, en_passant, is_white, depth, score, calculation_interrupted = result
+            pieces, castles, en_passant, is_white, depth, score, calculation_interrupted, hits, misses, conflicts, writes = result
             board  = Board(pieces, castles, en_passant, is_white)
-            result = MPResult(board, depth, score, calculation_interrupted, current_task.update_id)
+            result = MPResult(board, depth, score, calculation_interrupted, current_task.update_id, hits, misses, conflicts, writes)
             finished_task_queue.put(result)
 
         except Empty:

@@ -10,7 +10,7 @@ if __name__ == "__main__":
     from pyglet.clock import schedule_interval
     from pyglet.app import run
     from pyglet.window import Window
-    from app import APP, game_checks, user_input, APP_LOCK
+    from app import APP, game_checks, user_input, APP_LOCK, is_next_board_available, is_prev_board_available, set_to_next_board, set_to_prev_board
     from time import time
 
     SAND_COLOR = (255, 216, 139)
@@ -60,7 +60,7 @@ if __name__ == "__main__":
         batch.invalidate()
 
         board = shapes.Rectangle(
-            x = (window.width  - square_size * 8) / 2,
+            x = (window.width  - square_size * 8 * 2) / 2,
             y = (window.height - square_size * 8) / 2,
             height=square_size * 8,
             width=square_size * 8,
@@ -125,11 +125,11 @@ if __name__ == "__main__":
                 sprites.append(sprite)
 
         prev_button = shapes.Rectangle(
-            x      = board.x + (board.width + 20) / 2,
+            x      = board.x,
             y      = board.y - 40 - 20,
             width  = (board.width - 20) / 2,
             height = 40,
-            color  = SAND_COLOR,
+            color  = SAND_COLOR if is_prev_board_available() else BLACK,
             batch  = batch
         )
         buttons["prev_button"] = prev_button
@@ -148,11 +148,11 @@ if __name__ == "__main__":
 
 
         next_button = shapes.Rectangle(
-            x      = board.x,
+            x      = board.x + (board.width + 20) / 2,
             y      = board.y - 40 - 20,
             width  = (board.width - 20) / 2,
             height = 40,
-            color  = SAND_COLOR,
+            color  = SAND_COLOR if is_next_board_available() else BLACK,
             batch  = batch
         )
         buttons["next_button"] = next_button
@@ -170,27 +170,46 @@ if __name__ == "__main__":
         labels["eval_bar"] = next_label
 
         eval_bar = shapes.Rectangle(
-            x      = board.x,
-            y      = board.y + board.height + 20,
+            x      = board.x + board.width + 20,
+            y      = board.y,
             width  = board.width,
-            height = 40,
+            height = board.height,
             color  = SAND_COLOR,
             batch  = batch
         )
         buttons["eval_bar"] = eval_bar
         bar = ['|', '/', '—', '\\'][CYCLE_NR // 3 % 4]
-        eval_label = Label(
-            text      = f"depth {APP.depth} → {APP.score} in {APP.time_of_last_update - APP.time_of_last_move:.2f} s [{bar}]",
-            font_name = 'consolas',
-            font_size = 20,
-            x         = eval_bar.x + eval_bar.width  / 2,
-            y         = eval_bar.y + eval_bar.height / 2,
-            anchor_x  = 'center',
-            anchor_y  = 'center',
-            color     = BLACK,
-            batch     = batch
-        )
-        labels["eval_label"] = eval_label
+
+        labels["eval_label"] = {}
+        text = ''
+        for i in range(len(APP.depth)):
+            text = f"depth \t {APP.depth[i]:2} > {APP.score[i]:4} in {APP.time_of_last_update[i] - APP.time_of_last_move:.2f} s"
+            eval_label = Label(
+                text      = text,
+                font_name = 'consolas',
+                font_size = 20,
+                x         = eval_bar.x + 20,
+                y         = eval_bar.y + eval_bar.height - 20 - (i * 60),
+                anchor_x  = 'left',
+                anchor_y  = 'center',
+                color     = BLACK,
+                batch     = batch
+            )
+            labels["eval_label"][i] = eval_label
+        for i in range(len(APP.depth)):
+            text =  f" {APP.hits[i]:6} H {APP.misses[i]:6} M {APP.conflicts[i]:6} C {APP.writes[i]:6} W"
+            eval_label = Label(
+                text      = text,
+                font_name = 'consolas',
+                font_size = 20,
+                x         = eval_bar.x + 20,
+                y         = eval_bar.y + eval_bar.height - 20 - 30 - (i * 60),
+                anchor_x  = 'left',
+                anchor_y  = 'center',
+                color     = BLACK,
+                batch     = batch
+            )
+            labels["eval_label"][i * 20] = eval_label
 
 
     @window.event
@@ -202,6 +221,14 @@ if __name__ == "__main__":
 
         if index is not None:
             user_input(index)
+
+        sqr = buttons["next_button"]
+        if sqr.x <= x <= sqr.x + sqr.width and sqr.y <= y <= sqr.y + sqr.height:
+            set_to_next_board()
+
+        sqr = buttons["prev_button"]
+        if sqr.x <= x <= sqr.x + sqr.width and sqr.y <= y <= sqr.y + sqr.height:
+            set_to_prev_board()
 
 
     @window.event

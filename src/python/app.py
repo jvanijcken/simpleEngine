@@ -39,22 +39,29 @@ class App:
     last_start_fields       : list[int]
     last_end_fields         : list[int]
 
-    # analysis              :
+    # analysis
     time_of_last_move       : float
-    time_of_last_update     : float
-    best_position           : Board | None
-    score                   : int
-    depth                   : int
+    time_of_last_update     : list[float]
+    best_position           : list[Board]
+    score                   : list[int]
+    depth                   : list[int]
+    hits                    : list[int]
+    misses                  : list[int]
+    conflicts               : list[int]
+    writes                  : list[int]
     move_nr                 : int
 
-    # settings              :
+    # settings
     white_player_cpu        : bool
     black_player_cpu        : bool
     cpu_move_time_sec       : float
 
+    # history
+    index                   : int
     history                 : list[Board]
     next_moves              : dict[tuple[int, int], Board]
 
+    # update tracking
     update_id               : int
 
 
@@ -66,17 +73,23 @@ APP = App(  # this is read by UI
     last_end_fields         = [],
 
     time_of_last_move       = time(),
-    time_of_last_update     = time(),
-    best_position           = None,
-    score                   = 0,
-    depth                   = 0,
+    time_of_last_update     = [time()],
+    best_position           = [START_BOARD],
+    score                   = [0],
+    depth                   = [0],
+    hits                    = [0],
+    misses                  = [0],
+    conflicts               = [0],
+    writes                  = [0],
+
     move_nr                 = 0,
 
     white_player_cpu        = False,
     black_player_cpu        = False,
     cpu_move_time_sec       = 2,
 
-    history                 = [],
+    index                   = 0,
+    history                 = [START_BOARD],
     next_moves              = generate_moves(START_BOARD),
 
     update_id               = randint(0, 10**10)
@@ -122,7 +135,7 @@ def user_input(tile_selected):
 
 
 def game_checks():
-    """ should run frequently to initiate evaluation calculations and cpu moves"""
+    """ should run frequently to initiate evaluation calculations and cpu moves """
     try:
         schedule_move(cpu_move)
     except ValueError as e:
@@ -139,20 +152,24 @@ def game_checks():
 def calc():
     """ goes through the process of calculating the evaluation of a certain position, should be run in a Scheduler """
     worker.initiate()
-    result = worker.evaluate(APP.board, APP.depth + 1, APP.update_id)
+    result = worker.evaluate(APP.board, APP.depth[-1] + 1, APP.update_id)
 
     with APP_LOCK:
         if APP.update_id != result.update_id:
             return
 
-        APP.best_position       = result.board
-        APP.score               = result.score
-        APP.depth               = result.depth
-        APP.time_of_last_update = time()
+        APP.best_position       += [ result.board ]
+        APP.score               += [ result.score ]
+        APP.depth               += [ result.depth ]
+        APP.hits                += [ result.hits     ]
+        APP.misses              += [ result.misses   ]
+        APP.conflicts           += [ result.conflicts]
+        APP.writes              += [ result.writes   ]
+        APP.time_of_last_update += [ time()       ]
 
 
 def cpu_move():
-    """  makes sure the engine thinks for a certain amount of seconds before picking the best move"""
+    """  makes sure the engine thinks for a certain amount of seconds before picking the best move """
     start = time()
     update_id = APP.update_id + 0  # copy update_id ( +0 is important!)
 
@@ -174,7 +191,7 @@ def cpu_move():
             # calculation time is up
             if time() - start < APP.cpu_move_time_sec:
                 continue
-            if APP.depth < 7:
+            if APP.depth[-1] < 5:
                 print("no sufficient depth yet")
                 continue
 
@@ -190,21 +207,81 @@ def cpu_move():
                 print("no best position found")
                 return
 
-            make_move(APP.best_position)  # move
+            make_move(APP.best_position[-1])  # move
         break  # stop the loop
 
 
 def make_move(board: Board):
     """ handle all app changes associated with a new board """
     APP.board                = board
-    APP.best_position        = None
+    APP.best_position        = [board]
     APP.selected_fields      = []
     APP.highlighted_fields   = []
     APP.last_start_fields    = []  # todo
     APP.last_end_fields      = []  # todo
-    APP.score                = 0
-    APP.depth                = 0
+    APP.score                = [0]
+    APP.depth                = [0]
+    APP.hits                 = [0]
+    APP.misses               = [0]
+    APP.conflicts            = [0]
+    APP.writes               = [0]
     APP.time_of_last_move    = time()
-    APP.time_of_last_update  = time()
+    APP.time_of_last_update  = [time()]
     APP.update_id            = randint(0, 10**10)
     APP.next_moves           = generate_moves(board)
+    APP.index                = APP.index + 1
+    APP.history              = APP.history[:APP.index] + [board]
+
+
+def is_prev_board_available():
+    return APP.index > 0
+
+def set_to_prev_board():
+    with APP_LOCK:
+        if not is_prev_board_available():
+            return
+        worker.abort()
+        APP.index = APP.index - 1
+        APP.board = APP.history[APP.index]
+
+        APP.best_position        = [APP.board]
+        APP.selected_fields      = []
+        APP.highlighted_fields   = []
+        APP.last_start_fields    = []  # todo
+        APP.last_end_fields      = []  # todo
+        APP.score                = [0]
+        APP.depth                = [0]
+        APP.hits                 = [0]
+        APP.misses               = [0]
+        APP.conflicts            = [0]
+        APP.writes               = [0]
+        APP.time_of_last_move    = time()
+        APP.time_of_last_update  = [time()]
+        APP.update_id            = randint(0, 10**10)
+        APP.next_moves           = generate_moves(APP.board)
+
+
+def is_next_board_available():
+    return (APP.index + 1) < len(APP.history)
+
+def set_to_next_board():
+    with APP_LOCK:
+        if not is_next_board_available():
+            return
+        worker.abort()
+        APP.index = APP.index + 1
+        APP.board = APP.history[APP.index]
+
+        APP.best_position        = [APP.board]
+        APP.selected_fields      = []
+        APP.highlighted_fields   = []
+        APP.last_start_fields    = []  # todo
+        APP.last_end_fields      = []  # todo
+        APP.score                = [0]
+        APP.depth                = [0]
+        APP.time_of_last_move    = time()
+        APP.time_of_last_update  = [time()]
+        APP.update_id            = randint(0, 10**10)
+        APP.next_moves           = generate_moves(APP.board)
+
+

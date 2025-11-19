@@ -116,6 +116,10 @@ class MPResult:
     score                   : int
     calculation_interrupted : bool
     update_id               : int
+    hits                    : int
+    misses                  : int
+    conflicts               : int
+    writes                  : int
 
 
 

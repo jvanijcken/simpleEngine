@@ -47,12 +47,23 @@ void setIsCalculationFinished(const bool value) {
     pthread_mutex_unlock(&time_mutex);
 }
 
+int TTWrites    = 0;
+int TTHits      = 0;
+int TTMisses    = 0;
+int TTConflicts = 0;
+
 
 TTEntry* probeTT(const uint64_t hash) {
     TTEntry* e = &transTable[TT_INDEX(hash)];
     if (e->hash == hash) {
+        TTHits++;
         return e;
     }
+    if (e->hash == 0) {
+        TTMisses++;
+        return NULL;
+    }
+    TTConflicts++;
     return NULL;
 }
 
@@ -63,6 +74,7 @@ void storeTT(const uint64_t hash, const int depth, const int score, const int fl
         e->depth = depth;
         e->score = score;
         e->flag  = flag;
+        TTWrites++;
     }
 }
 
@@ -158,7 +170,6 @@ int principalVariationSearch(const Board* board, const int depth, int alpha, con
             }
         }
 
-        // fixme cached results dont give the best board
         if (score > alpha) {
             alpha = score;
         } // save if best score & save best move
@@ -213,89 +224,12 @@ typedef struct {
     int color;
 } DSArgs;
 
-void* threadedIDS(void* arg) {
-    const DSArgs* args = (DSArgs*)(arg);
-
-    setIsTimeUp(false);
-
-    int score = 0;
-    int depth = 0;
-    Board bestMove = {0};
-
-    while (depth < args->depth) {
-        if (getIsTimeUp()) {  // check if time is up
-            break;
-        }
-        score = movePrincipalVariationSearch(args->pBoard, depth, -INF, INF, args->color, &bestMove);
-
-        if (score >= CHECKMATE || score <= -CHECKMATE) {  // if checkmate is found you can stop
-            break;
-        }
-        depth++;
-    }
-    setIsCalculationFinished(true);
-
-    Result* pResult = malloc(sizeof(Result));
-    pResult->score = 0;
-    pResult->depth = 0;
-    pResult->bestMove = bestMove;
-
-    return (void*)pResult;
-}
-
-Result iterativeDeepeningSearch(Board* board, const int depth, const int color, PyObject* stop) {
-    pthread_t monitor_thread;
-
-    DSArgs* args = malloc(sizeof(DSArgs));
-    if (!args) {
-        fprintf(stderr, "Failed to allocate IDSArgs\n");
-        return (Result){0, 0};
-    }
-    args->pBoard = board;
-    args->depth  = depth;
-    args->color  = color;
-
-    setIsTimeUp(false);
-    setIsCalculationFinished(false);
-
-    pthread_create(&monitor_thread, NULL, threadedIDS, args);
-
-    bool isCalculationInterrupted = false;
-    while (true) {
-
-        PyGILState_STATE gstate = PyGILState_Ensure();
-        PyObject* result = PyObject_CallMethod(stop, "is_set", NULL);
-        const int should_stop = PyObject_IsTrue(result);
-        Py_XDECREF(result);
-        PyGILState_Release(gstate);
-
-        if (getIsCalculationFinished()) {
-            break;
-        }
-        // check for max time
-        if (should_stop) {
-            isCalculationInterrupted = true;
-            break;
-        }
-
-        usleep(100000); // sleep 100ms to avoid busy spinning
-    }
-
-    // Signal the worker thread to stop if needed
-    setIsTimeUp(true);
-
-    // Join the monitor thread and retrieve result
-    void* finalScore;
-    pthread_join(monitor_thread, &finalScore);
-    Result result = *(Result*)(finalScore);
-    result.calculationsInterrupted = isCalculationInterrupted;
-    free(finalScore);
-    free(args);
-
-    return result;
-}
 
 void* threadedDS(void* arg) {
+    TTWrites    = 0;
+    TTHits      = 0;
+    TTMisses    = 0;
+    TTConflicts = 0;
     const DSArgs* args = (DSArgs*)(arg);
 
     Board bestMove = {0};
@@ -305,6 +239,10 @@ void* threadedDS(void* arg) {
     pResult->score = sign * movePrincipalVariationSearch(args->pBoard, args->depth, -INF, INF, args->color, &bestMove);
     pResult->depth = args->depth;
     pResult->bestMove = bestMove;
+    pResult->TTWrites    = TTWrites;
+    pResult->TTHits      = TTHits;
+    pResult->TTMisses    = TTMisses;
+    pResult->TTConflicts = TTConflicts;
 
     setIsCalculationFinished(true);
 

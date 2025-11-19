@@ -13,6 +13,10 @@ typedef struct {
     int depth;
     Board bestMove;
     bool calculationsInterrupted;
+    int TTWrites;
+    int TTHits;
+    int TTMisses;
+    int TTConflicts;
 } Result;
 
 Result iterativeDeepeningSearch(Board* board, int depth, int color, PyObject* stop);

@@ -177,44 +177,6 @@ PyObject* convertBoardToArgs(const Board* board, const int color) {
     return result;
 }
 
-
-
-// IMPORTABLE FUNCTION
-static PyObject *
-iterative_deepening_search(PyObject *self, PyObject *args)
-{
-    PyObject *pieces_list        = NULL;
-    PyObject *castle_rights_list = NULL;
-    int en_passant               = 0;
-    PyObject *is_white           = NULL;
-    int maxDepth                 = 0;
-    PyObject *stop_flag          = NULL;
-
-    if (!PyArg_ParseTuple(args, "OOiOiO)", &pieces_list, &castle_rights_list, &en_passant, &is_white, &maxDepth, &stop_flag)) {
-        return NULL;
-    }
-    Py_XINCREF(stop_flag);  // keep this object alive!
-    Board board = {0};
-    if (!convertArgsToBoard(pieces_list, castle_rights_list, en_passant, is_white, &board)) {
-        return NULL;
-    };
-    if (!PyBool_Check(is_white)) {
-        PyErr_SetString(PyExc_TypeError, "is_white must be a bool");
-        return NULL;
-    }
-    const int color = (is_white == Py_True)? 0 : 1;
-
-    const Result result =  iterativeDeepeningSearch(&board, maxDepth, color, stop_flag);
-
-    const int opposite_color = (color)? 0 : 1;
-    PyObject* board_args = convertBoardToArgs(&result.bestMove, opposite_color);
-    PyObject* meta = Py_BuildValue("(iiO)", result.depth, result.score,  PyBool_FromLong(result.calculationsInterrupted));
-
-    Py_DECREF(stop_flag);
-    return PySequence_Concat(board_args, meta);
-}
-
-
 // IMPORTABLE FUNCTION
 static PyObject *
 direct_search(PyObject *self, PyObject *args)
@@ -244,7 +206,16 @@ direct_search(PyObject *self, PyObject *args)
     const int opposite_color = (color)? 0 : 1;
     PyObject* board_args = convertBoardToArgs(&result.bestMove, opposite_color);
 
-    PyObject* meta = Py_BuildValue("(iiO)", result.depth, result.score,  PyBool_FromLong(result.calculationsInterrupted));
+    PyObject* meta = Py_BuildValue(
+        "(iiOiiii)",
+        result.depth,
+        result.score,
+        PyBool_FromLong(result.calculationsInterrupted),
+        result.TTHits,
+        result.TTMisses,
+        result.TTConflicts,
+        result.TTWrites);
+
 
     Py_DECREF(stop_flag);
     return PySequence_Concat(board_args, meta);
@@ -256,12 +227,6 @@ direct_search(PyObject *self, PyObject *args)
 // MODULE
 
 static PyMethodDef PyChessMethods[] = {
-    {
-        "iterative_deepening_search",
-        iterative_deepening_search,
-        METH_VARARGS,
-        "Call iterative_deepening_search function"
-    },
     {
         "direct_search",
         direct_search,
