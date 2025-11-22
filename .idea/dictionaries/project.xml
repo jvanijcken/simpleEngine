@@ -15,9 +15,12 @@
       <w>nega</w>
       <w>oiid</w>
       <w>oiii</w>
+      <w>oiiii</w>
       <w>pychessmodule</w>
       <w>ssize</w>
+      <w>stdbool</w>
       <w>stdint</w>
+      <w>xdecref</w>
       <w>zobrist</w>
     </words>
   </dictionary>

@@ -9,14 +9,15 @@
 #include "transpositionTable.h"
 
 typedef struct {
-    int score;
-    int depth;
-    Board bestMove;
+    Board moves[512]            ;
+    int scores[512]             ;
+    int nrOfMoves               ;
+    int alpha                   ;
+    int TTWrites                ;
+    int TTHits                  ;
+    int TTMisses                ;
+    int TTConflicts             ;
     bool calculationsInterrupted;
-    int TTWrites;
-    int TTHits;
-    int TTMisses;
-    int TTConflicts;
 } Result;
 
 Result iterativeDeepeningSearch(Board* board, int depth, int color, PyObject* stop);
