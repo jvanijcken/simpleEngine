@@ -69,7 +69,7 @@ def mp_process(
                 current_task.start_depth,
                 stop_flag
                 )
-            _moves, scores, alpha, calculation_interrupted, hits, misses, conflicts, writes = result
+            _moves, scores, starts, ends, alpha, calculation_interrupted, hits, misses, conflicts, writes = result
             moves = [Board(*x) for x in _moves]
 
             if calculation_interrupted:

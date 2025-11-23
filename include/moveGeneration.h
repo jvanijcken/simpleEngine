@@ -8,6 +8,7 @@
 #include "transpositionTable.h"
 
 bool isInCheck(const Board* board,  int color);
-int generateMoves(const Board* board, Board results[], bool attacksOnly, int color);
+int generateMoves(const Board* board, Board results[], int color);
+int generateDetailedMoves(const Board* board, Board results[], int color, int starts[], int ends[]);
 
 #endif //SIMPLEENGINE_MOVEGENERATION_H

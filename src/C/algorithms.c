@@ -68,6 +68,15 @@ TTEntry* probeTT(const uint64_t hash) {
     return NULL;
 }
 
+TTEntry* sneakyProbeTT(const uint64_t hash)
+{
+    TTEntry* e = &transTable[TT_INDEX(hash)];
+    if (e->hash == hash) {
+        return e;
+    }
+    return NULL;
+}
+
 void storeTT(const uint64_t hash, const int depth, const int score, const int flag ) {
     TTEntry* e = &transTable[TT_INDEX(hash)];
     if (e->depth < depth) {
@@ -85,7 +94,7 @@ void storeTT(const uint64_t hash, const int depth, const int score, const int fl
 
 
 int getEval(const Board* board, const int color) {
-    const TTEntry* entry = probeTT(board->hash);
+    const TTEntry* entry = sneakyProbeTT(board->hash);
     if (entry && entry->flag == 0) return entry->score;
     return board->eval * SIGN(color);;
 }
@@ -144,7 +153,7 @@ int principalVariationSearch(const Board* board, const int depth, int alpha, con
     if (isTooFarPastHorizon)           {return board->eval * SIGN(color);}  // too expensive
 
     Board moves[512];
-    const int nrOfMoves = generateMoves(board, moves, false, color);
+    const int nrOfMoves = generateMoves(board, moves, color);
 
     if (nrOfMoves == 0 && isInCheck(board, color)) return (-CHECKMATE - depth);
     if (nrOfMoves == 0)                            return 0;
@@ -209,7 +218,9 @@ void* Ds(void* _args) {
     Result* result       = calloc(1, sizeof(Result));
     Board moves[512]    = {0};
     int scores[512]     = {0};
-    const int nrOfMoves = generateMoves(board, moves, false, color);
+    int starts[512]     = {0};
+    int ends[512]       = {0};
+    const int nrOfMoves = generateDetailedMoves(board, moves, color, starts, ends);
 
     if (nrOfMoves == 0 && isInCheck(board, color)) {
         result->alpha = - CHECKMATE;
@@ -234,13 +245,16 @@ void* Ds(void* _args) {
     for (int i = 0; i < 512; i++) result->moves[i]   = moves[i];
     for (int i = 0; i < 512; i++) result->scores[i]  = scores[i];
     result->nrOfMoves = nrOfMoves;
-    result->alpha = alpha;
+    result->alpha = (color)? -alpha : alpha;
+    for (int i = 0; i < 512; i++) result->starts[i]  = starts[i];
+    for (int i = 0; i < 512; i++) result->ends[i]    = ends[i];
 
     // write TT params
     result->TTWrites    = TTWrites   ;
     result->TTHits      = TTHits     ;
     result->TTMisses    = TTMisses   ;
     result->TTConflicts = TTConflicts;
+
 
     setIsCalculationFinished(true);  // signal im ready
     return result;

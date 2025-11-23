@@ -205,12 +205,16 @@ direct_search(PyObject *self, PyObject *args)
 
     PyObject *moves_list = PyList_New(result.nrOfMoves);
     PyObject *scores_list = PyList_New(result.nrOfMoves);
+    PyObject *starts_list = PyList_New(result.nrOfMoves);
+    PyObject *ends_list = PyList_New(result.nrOfMoves);
 
     for (int n = 0; n < result.nrOfMoves; n++) {
         const int opposite_color = (color)? 0 : 1;
         PyObject* board_args = convertBoardToArgs(&result.moves[n], opposite_color);
         PyList_SET_ITEM(moves_list, n, board_args);
         PyList_SET_ITEM(scores_list, n, PyLong_FromLong(result.scores[n]));
+        PyList_SET_ITEM(starts_list, n, PyLong_FromLong(result.starts[n]));
+        PyList_SET_ITEM(ends_list, n, PyLong_FromLong(result.ends[n]));
     }
 
     PyObject* meta = Py_BuildValue(
@@ -223,7 +227,7 @@ direct_search(PyObject *self, PyObject *args)
         result.TTWrites);
 
     Py_DECREF(stop_flag);
-    return PySequence_Concat(Py_BuildValue("(OO)", moves_list, scores_list), meta);
+    return PySequence_Concat(Py_BuildValue("(OOOO)", moves_list, scores_list, starts_list, ends_list), meta);
 }
 
 

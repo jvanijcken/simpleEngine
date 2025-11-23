@@ -18,6 +18,8 @@ typedef struct {
     int TTMisses                ;
     int TTConflicts             ;
     bool calculationsInterrupted;
+    int starts[512]             ;
+    int ends[512]               ;
 } Result;
 
 Result iterativeDeepeningSearch(Board* board, int depth, int color, PyObject* stop);

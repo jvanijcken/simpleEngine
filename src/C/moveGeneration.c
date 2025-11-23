@@ -140,7 +140,7 @@ int whiteQueensideCastle(Board* result) {
     return 1;
 }
 
-int generateMoves(const Board* board, Board results[], const bool attacksOnly, const int color) {
+int generateDetailedMoves(const Board* board, Board results[], const int color, int starts[], int ends[]) {
     int moveCount = 0;
 
     for (int startPiece = P; startPiece <= K; startPiece++) {
@@ -155,7 +155,82 @@ int generateMoves(const Board* board, Board results[], const bool attacksOnly, c
             uint64_t moves = function(startIndex, board, color);
             pieces &= pieces - 1;
 
-            if (attacksOnly) {moves &= board->colors[!color];}
+            while (moves) {
+
+                const uint64_t end = moves & -moves;
+                const int endIndex = __builtin_ctzll(end);
+                moves &= moves - 1;
+
+                const int capturedPiece = getPiece(board, end, !color);
+
+                const int promotionPieces[4] = {R, N, B, Q};
+                const int promotionEnds[4] = {64 + R, 64 + N, 64 + B, 64 + Q};
+                const int* endPieces;
+                const int* moveEnds;
+                int nrOfMoves;
+
+                if (startPiece == P && end & (RANK8 | RANK1)) {
+                    nrOfMoves = 4;
+                    endPieces = promotionPieces;
+                    moveEnds = promotionEnds;
+                }
+                else {
+                    nrOfMoves = 1;
+                    endPieces = &startPiece;
+                    moveEnds = &endIndex;
+                }
+
+                for (int i  = 0; i < nrOfMoves; i++) {
+                    const int endPiece = endPieces[i];
+
+                    starts[moveCount] = startIndex;
+                    ends[moveCount]   = moveEnds[i];
+
+                    Board* result = &results[moveCount];
+                    *result = *board;
+
+                    addMove(result, start, end, startPiece, endPiece, capturedPiece, color, startIndex, endIndex);
+
+
+                    if (!isInCheck(result, color)) {
+                        starts[moveCount] = startIndex;
+                        ends[moveCount]   = endIndex;
+                        moveCount++;
+                    }
+                }
+            }
+        }
+    }
+    // add castle moves
+    results[moveCount + 0] = *board;
+    results[moveCount + 1] = *board;
+
+    if (color) {
+        moveCount += blackKingsideCastle (&results[moveCount]);
+        moveCount += blackQueensideCastle(&results[moveCount]);
+    }
+    else {
+        moveCount += whiteKingsideCastle (&results[moveCount]);
+        moveCount += whiteQueensideCastle(&results[moveCount]);
+    }
+    return moveCount;
+}
+
+
+int generateMoves(const Board* board, Board results[], const int color) {
+    int moveCount = 0;
+
+    for (int startPiece = P; startPiece <= K; startPiece++) {
+
+        const MoveFunction function = moveFunctions[startPiece];
+        uint64_t pieces = board->pieces[color][startPiece];
+
+        while (pieces) {
+
+            const uint64_t start = pieces & -pieces;
+            const int startIndex = __builtin_ctzll(start);
+            uint64_t moves = function(startIndex, board, color);
+            pieces &= pieces - 1;
 
             while (moves) {
 
