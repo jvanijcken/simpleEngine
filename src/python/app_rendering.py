@@ -7,7 +7,7 @@ if __name__ == "__main__":
     from pyglet.app import run
     from pyglet.window import Window
     from app import APP, game_checks, user_input, APP_LOCK, set_to_next_board, set_to_prev_board
-    from render_functions import draw_board, draw_next_prev_buttons, draw_eval_table, draw_cache_info_box, draw_move_info_box
+    from render_functions import draw_board, draw_next_prev_buttons, draw_eval_table, draw_cache_info_box, draw_move_info
 
     SAND_COLOR = (255, 216, 139)
     WHITE = (255, 255, 255)
@@ -50,12 +50,18 @@ if __name__ == "__main__":
                 batch=batch, table=APP.board_analysis
             ))
 
-            widgets.__ior__(draw_move_info_box(
+            table = []
+            for k in sorted(APP.board_analysis):
+                table += [APP.board_analysis[k]]
+
+            widgets.__ior__(draw_move_info(
                 x=board_size + 2*20,
                 y = 20,
                 width=window.width - board_size - 3*20, height = window.height - 2*20,
-                batch=batch, table=APP.board_analysis
+                table=table,
+                batch=batch
             ))
+
 
             #table = dict(
             #    depth=APP.depth, score=APP.score, time=[APP.time_of_last_move - x for x in APP.time_of_last_update],

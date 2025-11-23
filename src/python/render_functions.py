@@ -101,129 +101,122 @@ def draw_cache_info_box(x, y, width, height, batch, table: dict[int, BoardAnalys
         return widgets
 
     widgets["cache_info_box"] = shapes.Rectangle(x, y, width=width, height=height, color=BLACK, batch=batch)
+    return widgets
 
-    pad = 3
-    box_height = 30
 
-    box_space = (height - 4) // (box_height + pad) - 1
-    data_len = len(table)
-    add_triple_dot = box_space <data_len
-    nr_of_boxes = min(box_space, data_len)
-    if add_triple_dot:
-        bottom_space = (height - pad//2) - (nr_of_boxes + 1) * (pad + box_height)
+def draw_move_info(x, y, width, height, batch, table: list[BoardAnalysis]):
+    nr_of_elements = len(table) + 1
+    main_box, header, body = draw_list(x, y, width, height, 5, [40] * nr_of_elements, batch)
+    widgets = dict()
+    widgets["boxes"] = (main_box, header, body)
 
-        widgets["triple"] = text.Label(
-            "...",
-            x + width/2,
-            y + bottom_space/2,
-            font_size=20,
-            width = 60, height=20, color=MID_DARK, batch=batch, anchor_x="center"
-        )
+    if header:
+        widgets["header_text"] = place_text_in_box(
+            header[0], batch, pad=0,
+            texts=[
+                "depth",
+                "alpha",
+                "hits",
+                "Misses",
+                "Conflicts",
+                "Writes",
+                "Confl.%"
+            ],
+            widths=[100] * 7)
 
-    widgets["cache_info_header"] = draw_cache_info_header(
-        x + pad,
-        (y + height) - (box_height + pad),
-        width - 2*pad,
-        box_height, batch,
-    )
-
-    widgets["cache_boxes"] = {}
-    for i in range(nr_of_boxes):
-        widgets["cache_boxes"][i] = draw_cache_info_line(
-            x + pad,
-            (y + height) - ((i + 2) * (box_height + pad)),
-            width - 2*pad,
-            box_height, batch, i, table[i])
+    widgets["body_text"] = {}
+    for i, box in enumerate(body):
+        line: BoardAnalysis = table[i]
+        widgets["body_text"][i] = place_text_in_box(
+            box, batch, pad=0,
+            texts=[
+                f"{i}",
+                f"{line.best_score}",
+                nr_format(line.hits),
+                nr_format(line.misses),
+                nr_format(line.conflicts),
+                nr_format(line.writes),
+                f"{line.conflicts / (line.hits + line.misses):>6.1f}%"
+            ],
+            widths=[100] * 7)
 
     return widgets
 
 
-def draw_cache_info_line(x, y, width, height, batch, depth, info: BoardAnalysis):
-    widgets = dict()
-    widgets["box"] = shapes.Rectangle(x, y, width, height, batch=batch, color=DARK)
-    widgets["label"] = text.Label(
-        f"{depth}",
-        x + 30,
-        y + 7,
-        width=40,
-        height=height, batch=batch, font_name="consolas", font_size=15, anchor_x='center', color=MID_DARK)
-
-    sep = (width - 60) / 5
-    widgets["info"] = {}
-
-    for i, val in enumerate([info.hits, info.misses, info.conflicts, info.writes]):
-        widgets["info"][i] = text.Label(
-            format_number(val),
-            x + 60 + i*sep,
-            y + 7,
-            width=sep,
-            height=height, batch=batch, font_name="consolas", font_size=15, anchor_x='left', color=MID_DARK)
-
-    if (info.hits + info.misses) == 0:
-        perc = 0
+def nr_format(nr):
+    if nr < 1000:
+        return f"{nr:>6}"  # Aligns the numbe
+    elif nr < 1_000_000:
+        return f"{nr / 1000:>5.1f}K"  # 6 cha
+    elif nr < 1_000_000_000:
+        return f"{nr / 1_000_000:>5.1f}M"  #
     else:
-        perc = info.conflicts / (info.hits + info.misses) * 100
-    widgets["info"][4] = text.Label(
-        f"{perc:>6.1f}%",
-        x + 60 + 4*sep,
-        y + 7,
-        width=sep,
-        height=height, batch=batch, font_name="consolas", font_size=15, anchor_x='left', color=MID_DARK)
+        return f"{nr / 1_000_000_000:>5.1f}B"
+
+
+def draw_list(x, y, width, height, pad, elements, batch):
+    header, body = [], []
+    main_box = shapes.Rectangle(x, y, width, height, color=BLACK, batch=batch)
+    positions, space_left = place_vertical(x, y, width, height, pad, elements)
+
+    # header
+    try:
+        header.append(shapes.Rectangle(*positions.pop(0), color=DARK, batch=batch))
+    except IndexError:
+        pass # there is no place for header
+
+    # body
+    for i, info in enumerate(elements):
+        try:
+            position = positions[i]
+            body.append(shapes.Rectangle(*position, color=DARK, batch=batch))
+        except IndexError:
+            pass # there is no place for element
+
+    return main_box, header, body
+
+
+def place_vertical(x, y, width, height, pad, heights
+                   ) -> tuple[list[tuple[int, int, int, int]], int]:
+    result = []
+    y_el = y + height
+    x_el = x + pad
+    w_el = width - 2*pad
+
+    for i, h_el in enumerate(heights):
+        y_el -= pad
+        y_el -= h_el
+        if y_el < y:
+            break
+        result += [(x_el, y_el, w_el, h_el)]
+
+    space_left = y_el - y
+
+    return result, space_left
+
+
+def place_text_in_box(box, batch, pad, texts, widths):
+    widgets = []
+    x = box.x
+    for txt, w in zip(texts, widths):
+        x += pad
+        widgets.append(text.Label(
+            text=txt, x=x + w/2, y=box.y + box.height/2, width=w, batch=batch,
+            anchor_x='center', anchor_y='center', font_name="Consolas", font_size=15, color=MID_DARK
+        ))
+        x += w
 
     return widgets
 
 
-def draw_cache_info_header(x, y, width, height, batch):
-    widgets = dict()
-    widgets["box"] = shapes.Rectangle(x, y, width, height, batch=batch, color=DARK)
-    widgets["label"] = text.Label(
-        "Depth",
-        x + 30,
-        y + 7,
-        width=40,
-        height=height, batch=batch, font_name="consolas", font_size=15, anchor_x='center', color=MID_DARK)
-
-    sep = (width - 60) / 5
-    widgets["info"] = {}
-
-    for i, val in enumerate(['  Hits', '  Miss', 'Confl.', 'Writes']):
-        widgets["info"][i] = text.Label(
-            val,
-            x + 60 + i*sep,
-            y + 7,
-            width=sep,
-            height=height, batch=batch, font_name="consolas", font_size=15, anchor_x='left', color=MID_DARK)
-
-    widgets["info"][4] = text.Label(
-        "   Cfl%",
-        x + 60 + 4*sep,
-        y + 7,
-        width=sep,
-        height=height, batch=batch, font_name="consolas", font_size=15, anchor_x='left', color=MID_DARK)
-
-    return widgets
-
-
-def format_number(num):
-    if num < 1000:
-        return f"{num:>6}"  # Aligns the number to the right and ensures at least 6 characters wide
-    elif num < 1_000_000:
-        return f"{num / 1000:>5.1f}K"  # 6 characters wide, 2 decimal places, 'K' suffix
-    elif num < 1_000_000_000:
-        return f"{num / 1_000_000:>5.1f}M"  # 6 characters wide, 2 decimal places, 'M' suffix
-    else:
-        return f"{num / 1_000_000_000:>5.1f}B"  # 6 characters wide, 2 decimal places, 'B' suffix
 
 
 
-def draw_move_info_box(x, y, width, height, batch, table: dict[int, BoardAnalysis]):
-    widgets = dict()
-    widgets["move_info_box"] = shapes.Rectangle(
-        x,
-        y,
-        width,
-        height, color=BLACK, batch=batch)
-    return widgets
+
+
+
+
+
 
 
 
