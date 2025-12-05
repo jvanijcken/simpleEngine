@@ -125,14 +125,13 @@ def generate_moves(board: Board) -> dict[tuple[int, int], Board]:
             if start_piece == WP and end // 8 == 0:  # promotion
                 end_pieces = [WR, WN, WB, WQ]
             elif start_piece == BP and end // 8 == 7:  # promotion
-                end_pieces = [WR, WN, WB, WQ]
+                end_pieces = [BR, BN, BB, BQ]
             else:
                 end_pieces = [start_piece]
 
             for end_piece in end_pieces:
-                move: Move = Move(start, end, start_piece, end_piece, captured_piece, board.is_white)
 
-                new_position:  Board = move_piece(board, move)
+                new_position:  Board = move_piece(board, start, end, start_piece, end_piece, captured_piece, board.is_white, NO_CASTLE)
                 king:          int   = WK if board.is_white else BK
                 king_position: int   = new_position.pieces.index(king)
 
@@ -150,7 +149,7 @@ def generate_moves(board: Board) -> dict[tuple[int, int], Board]:
     return result
 
 
-def move_piece(board: Board, move: Move) -> Board:
+def move_piece(board: Board, start, end, start_piece, end_piece, captured_piece, is_white, castle) -> Board:
     new_position: Board = Board(
         board.pieces[:],
         board.castles[:],
@@ -158,41 +157,41 @@ def move_piece(board: Board, move: Move) -> Board:
         board.is_white
     )
 
-    new_position.pieces[move.start] = NO_PIECE
-    new_position.pieces[move.end]   = move.end_piece
+    new_position.pieces[start] = NO_PIECE
+    new_position.pieces[end]   = end_piece
 
-    if move.end == board.en_passant:  # remove pawn if en passant
-        start_row = move.start // 8
-        end_col   = move.end    % 8
+    if end == board.en_passant:  # remove pawn if en passant
+        start_row = start // 8
+        end_col   = end    % 8
         new_position.pieces[start_row * 8 + end_col] = NO_PIECE
 
     if board.is_white:  # revoke white castle rights
-        if move.start_piece == WK:
+        if start_piece == WK:
             new_position.castles[WHITE_QUEENSIDE] = 0
             new_position.castles[WHITE_KINGSIDE ] = 0
 
-        if (move.start_piece == WR and move.start == A1) or (move.captured_piece == WR and move.end == A1):
+        if (start_piece == WR and start == A1) or (captured_piece == WR and end == A1):
             new_position.castles[WHITE_QUEENSIDE] = 0
 
-        if (move.start_piece == WR and move.start == H1) or (move.captured_piece == WR and move.end == H1):
+        if (start_piece == WR and start == H1) or (captured_piece == WR and end == H1):
             new_position.castles[WHITE_KINGSIDE] = 0
 
     else:   # revoke black castle rights
-        if move.start_piece == BK:
+        if start_piece == BK:
             new_position.castles[0] = 0
             new_position.castles[1] = 0
 
-        if (move.start_piece == BR and move.start == A8) or (move.captured_piece == BR and move.end == A8):
+        if (start_piece == BR and start == A8) or (captured_piece == BR and end == A8):
             new_position.castles[BLACK_QUEENSIDE] = 0
 
-        if (move.start_piece == BR and move.start == H8) or (move.captured_piece == BR and move.end == H8):
+        if (start_piece == BR and start == H8) or (captured_piece == BR and end == H8):
             new_position.castles[BLACK_KINGSIDE] = 0
 
     new_position.en_passant = NO_MOVE # update en passant
     if (
-            (move.start_piece == WP and abs(move.end - move.start) == 16) or
-            (move.start_piece == BP and abs(move.end - move.start) == 16)):
-        new_position.en_passant = max(move.start, move.end) - 8
+            (start_piece == WP and abs(end - start) == 16) or
+            (start_piece == BP and abs(end - start) == 16)):
+        new_position.en_passant = max(start, end) - 8
 
     new_position.is_white = not board.is_white
 
@@ -221,9 +220,9 @@ def black_kingside_castle(board: Board):
         if can_be_attacked(board, tile, is_white=False):
             return {}
 
-    board = move_piece(board, Move(E8, G8, BK, BK, NO_PIECE, False, BLACK_KINGSIDE))
+    board = move_piece(board, E8, G8, BK, BK, NO_PIECE, False, BLACK_KINGSIDE)
     board.is_white = False
-    board = move_piece(board, Move(H8, F8, BR, BR, NO_PIECE, False, BLACK_KINGSIDE))
+    board = move_piece(board, H8, F8, BR, BR, NO_PIECE, False, BLACK_KINGSIDE)
     return {(E8, G8) : board}
 
 
@@ -237,9 +236,9 @@ def black_queenside_castle(board: Board):
         if can_be_attacked(board, tile, is_white=False):
             return {}
 
-    board = move_piece(board, Move(E8, C8, BK, BK, NO_PIECE, False, BLACK_QUEENSIDE))
+    board = move_piece(board, E8, C8, BK, BK, NO_PIECE, False, BLACK_QUEENSIDE)
     board.is_white = False
-    board = move_piece(board, Move(A8, D8, BR, BR, NO_PIECE, False, BLACK_QUEENSIDE))
+    board = move_piece(board, A8, D8, BR, BR, NO_PIECE, False, BLACK_QUEENSIDE)
     return {(E8, C8) : board}
 
 
@@ -253,9 +252,9 @@ def white_kingside_castle(board: Board):
         if can_be_attacked(board, tile, is_white=True):
             return {}
 
-    board = move_piece(board, Move(E1, G1, WK, WK, NO_PIECE, True, WHITE_KINGSIDE))
+    board = move_piece(board, E1, G1, WK, WK, NO_PIECE, True, WHITE_KINGSIDE)
     board.is_white = True
-    board = move_piece(board, Move(H1, F1, WR, WR, NO_PIECE, True, WHITE_KINGSIDE))
+    board = move_piece(board, H1, F1, WR, WR, NO_PIECE, True, WHITE_KINGSIDE)
     return {(E1, G1) : board}
 
 
@@ -269,9 +268,9 @@ def white_queenside_castle(board: Board):
         if can_be_attacked(board, tile, is_white=True):
             return {}
 
-    board = move_piece(board, Move(E1, C1, WK, WK, NO_PIECE, True, WHITE_KINGSIDE))
+    board = move_piece(board, E1, C1, WK, WK, NO_PIECE, True, WHITE_KINGSIDE)
     board.is_white = True
-    board = move_piece(board, Move(A1, D1, WR, WR, NO_PIECE, True, WHITE_KINGSIDE))
+    board = move_piece(board, A1, D1, WR, WR, NO_PIECE, True, WHITE_KINGSIDE)
     return {(E1, C1) : board}
 
 

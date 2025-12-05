@@ -230,8 +230,6 @@ void* Ds(void* _args) {
         result->alpha = -1;
         return result;
     }
-    qsort(moves, nrOfMoves, sizeof(Board), sortBestMovesFirst(color));  // put best move first
-
     for (int i = 0; i < nrOfMoves; i++) {  // iterate over moves
         const int beta    = INF;
         scores[i] = -principalVariationSearch(&moves[i], depth -1, -beta, -alpha, !color);

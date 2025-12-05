@@ -1,9 +1,10 @@
+import pyglet
 from pyglet import shapes
 from pyglet.image import load
 from pyglet import sprite
 from pyglet import text
-from app import is_next_board_available, is_prev_board_available, set_to_next_board, set_to_prev_board
-from global_constants import BoardAnalysis
+from current_board import *
+from global_constants import BoardAnalysis, Move
 
 
 _piece_dict = {
@@ -22,7 +23,7 @@ _piece_dict = {
 }
 _widgets = {}
 
-def draw_board(x, y, width, height, batch, pieces, selected_fields, highlighted_fields):
+def draw_board(x, y, width, height, batch, pieces, selected_fields, highlighted_fields, last_starts, last_ends, pending_promotions):
     widgets = dict(squares={}, highlight={}, selected={}, pieces={})
 
     tile_color_dark           = (237, 136,  85)
@@ -31,6 +32,20 @@ def draw_board(x, y, width, height, batch, pieces, selected_fields, highlighted_
     for i in range(64):
         _x = x + square_size * (i % 8)
         _y = y + square_size * (7 - (i // 8))
+
+        if i in pending_promotions:
+            move = pending_promotions[i]
+            widgets["squares"][i] = shapes.Rectangle(
+                x=_x,
+                y=_y,
+                width=square_size, height=square_size, color=(233, 133, 50), batch=batch)
+
+            image = _piece_dict[move.end_piece]
+            widgets["pieces"][i] = sprite.Sprite(
+                x=_x + square_size/2 - image.width/2,
+                y=_y + square_size/2 - image.height/2,
+                img=image, batch=batch)
+            continue
 
         is_dark_square: bool = ((i // 8) + (i % 8)) % 2 != 0
         color = tile_color_dark if is_dark_square else tile_color_light
@@ -45,10 +60,18 @@ def draw_board(x, y, width, height, batch, pieces, selected_fields, highlighted_
             widgets["highlight"][i] = shapes.Circle(
                 x=_x + square_size/2,
                 y=_y + square_size/2,
-                radius = square_size/3, color=(174, 174, 174), batch=batch)
+                radius = square_size/5*2, color=(174, 174, 174), batch=batch)
             widgets["highlight"][i].opacity = 128  # 50% transparent
 
         is_selected: bool = i in selected_fields
+        if is_selected:
+            widgets["selected"][i] = shapes.Rectangle(
+                x=_x + 5,
+                y=_y + 5,
+                width=square_size - 10, height=square_size - 10, color=(174, 174, 174), batch=batch)
+            widgets["selected"][i].opacity = 128  # 50% transparent
+
+        is_selected: bool = i in last_starts + last_ends
         if is_selected:
             widgets["selected"][i] = shapes.Rectangle(
                 x=_x,
@@ -68,26 +91,26 @@ def draw_board(x, y, width, height, batch, pieces, selected_fields, highlighted_
 
 def draw_next_prev_buttons(x, y, width, height, batch):
     widgets = dict(buttons={}, button_labels={})
-    ipad = 20
+    ipad = 1
     button_width = width/2 - ipad/2
 
-    prev_color = DARK if is_prev_board_available() else BLACK
+    prev_color = DARK if prev_possible() else BLACK
     widgets['buttons']['prev'] = shapes.Rectangle(
         x=x,
         y=y,
         width=width/2 - ipad/2, height=height, color=prev_color,batch=batch)
-    prev_lbl_color = MID_DARK if is_prev_board_available() else DARK
+    prev_lbl_color = MID_DARK if prev_possible() else DARK
     widgets['button_labels']['prev'] = text.Label(
         x=x + button_width/2,
         y=y+height/2,
         text="Prev", font_name='consolas', font_size=20, anchor_x='center', anchor_y='center', color=prev_lbl_color, batch=batch
     )
-    next_color = DARK if is_next_board_available() else BLACK
+    next_color = DARK if next_possible() else BLACK
     widgets['buttons']['next'] = shapes.Rectangle(
         x=x + button_width + ipad,
         y=y,
         width=width/2 - ipad/2, height=height, color=next_color,batch=batch)
-    next_lbl_color = MID_DARK if is_next_board_available() else DARK
+    next_lbl_color = MID_DARK if next_possible() else DARK
     widgets['button_labels']['next'] = text.Label(
         x=x + button_width + ipad + button_width/2,
         y=y+height/2,
@@ -106,7 +129,7 @@ def draw_cache_info_box(x, y, width, height, batch, table: dict[int, BoardAnalys
 
 def draw_move_info(x, y, width, height, batch, table: list[BoardAnalysis]):
     nr_of_elements = len(table) + 1
-    main_box, header, body = draw_list(x, y, width, height, 5, [40] * nr_of_elements, batch)
+    main_box, header, body = draw_list(x, y, width, height, 1, [40] * nr_of_elements, batch)
     widgets = dict()
     widgets["boxes"] = (main_box, header, body)
 
@@ -114,9 +137,10 @@ def draw_move_info(x, y, width, height, batch, table: list[BoardAnalysis]):
         widgets["header_text"] = place_text_in_box(
             header[0], batch, pad=0,
             texts=[
-                "depth",
-                "alpha",
-                "hits",
+                "Depth",
+                "Alpha",
+                "Best",
+                "Hits",
                 "Misses",
                 "Conflicts",
                 "Writes",
@@ -132,6 +156,7 @@ def draw_move_info(x, y, width, height, batch, table: list[BoardAnalysis]):
             texts=[
                 f"{i}",
                 f"{line.best_score}",
+                f"{get_best_moves(line.moves)}",
                 nr_format(line.hits),
                 nr_format(line.misses),
                 nr_format(line.conflicts),
@@ -143,13 +168,33 @@ def draw_move_info(x, y, width, height, batch, table: list[BoardAnalysis]):
     return widgets
 
 
+def get_best_moves(moves: list[Move]):
+    best_moves = []
+    best_score = None
+    for move in moves:
+        if best_score is None:
+            best_moves, best_score = [move], move.score
+
+        elif move.score > best_score:
+            best_moves, best_score = [move], move.score
+
+        elif move.score == best_score:
+            best_moves += [move]
+
+    try:
+        return [m.notation for m in best_moves][0]
+    except IndexError:
+        return ""
+
+
+
 def nr_format(nr):
     if nr < 1000:
-        return f"{nr:>6}"  # Aligns the numbe
+        return f"{nr:>6}"
     elif nr < 1_000_000:
-        return f"{nr / 1000:>5.1f}K"  # 6 cha
+        return f"{nr / 1000:>5.1f}K"
     elif nr < 1_000_000_000:
-        return f"{nr / 1_000_000:>5.1f}M"  #
+        return f"{nr / 1_000_000:>5.1f}M"
     else:
         return f"{nr / 1_000_000_000:>5.1f}B"
 
@@ -200,53 +245,67 @@ def place_text_in_box(box, batch, pad, texts, widths):
     x = box.x
     for txt, w in zip(texts, widths):
         x += pad
+        if (x + w) > (box.x + box.width):
+            break
         widgets.append(text.Label(
             text=txt, x=x + w/2, y=box.y + box.height/2, width=w, batch=batch,
-            anchor_x='center', anchor_y='center', font_name="Consolas", font_size=15, color=MID_DARK
+            anchor_x='center', anchor_y='center', font_name="Segoe UI Symbol", font_size=15, color=MID_DARK
         ))
         x += w
 
     return widgets
 
 
+def draw_ranked_moves(x, y, width, height, batch, moves: list[Move]):
+    widgets = dict()
+    widgets["move_box"] = shapes.Rectangle(x, y, width, height, batch=batch, color=BLACK)
+    widgets["move_boxes"] = {}
+    widgets["move_texts"] = {}
+    coords = place_in_grid(x, y, width, height, 1, 110, 40)
+    for i, coord in enumerate(coords):
+        try:
+            move = moves[i]
+        except IndexError:
+            break
 
-
-
-
-
-
-
-
-
-
-
-def draw_eval_table(x, y, width, height, batch, table):
-    widgets: dict = dict(labels={}, cache_info={})
-    widgets['background'] = shapes.Rectangle(
-        x=x,
-        y=y,
-        width=width, height=height, color=MID_DARK, batch=batch)
-
-    nr_of_rows = len(table['depth'])
-    for i in range(nr_of_rows):
-        txt = (f"depth {table["depth"][i]:2} > "
-               f"{table["score"][i]:4} "
-               f"in {table["time"][i]:.2f} s")
-        widgets["labels"][i] = text.Label(
-            x=x + 20,
-            y=y + height - 20 - (i * 60),
-            text=txt, font_name='consolas', font_size=20, anchor_x='left', anchor_y='center', color=BLACK, batch=batch)
-
-    for i in range(nr_of_rows):
-        txt =  (f"{table["hits"][i]:6} H "
-                f"{table["misses"][i]:6} M "
-                f"{table["conflicts"][i]:6} C "
-                f"{table["writes"][i]:6} W")
-        widgets["cache_info"][i] = text.Label(
-            x=x+20,
-            y=y + height - 20 - (i * 60) - 30,
-            text=txt, font_name='consolas', font_size=20, anchor_x='left', anchor_y='center', color=BLACK, batch=batch)
+        box = shapes.Rectangle(*coord, batch=batch, color=DARK)
+        txt = place_text_in_box(box, batch, 0, [f"{move.notation}"], [110])
+        widgets["move_boxes"][i] = box
+        widgets["move_texts"][i] = txt
     return widgets
+
+
+
+def place_in_grid(x, y, width, height, pad, w_el, h_el):
+    x_end = x + width
+    y_end = y - height
+
+    y += height
+    x_s = x + 0
+
+    result = []
+    for i in range(20):
+        x = x_s + 0
+
+        for j in range(20):
+            if (y - h_el - pad) < y_end:
+                break
+            if (x + w_el + pad) > x_end:
+                break
+
+            result.append((
+                x + pad,
+                y - h_el - pad,
+                w_el,
+                h_el
+            ))
+            x += pad
+            x += w_el
+
+        y -= pad
+        y -= h_el
+
+    return result
 
 
 

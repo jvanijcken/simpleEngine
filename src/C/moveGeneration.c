@@ -2,6 +2,7 @@
 // Created by jvani on 22/09/2025.
 //
 #include <assert.h>
+#include <stdio.h>
 
 #include "../../include/transpositionTable.h"
 #include "../../include/moveFunctions.h"
@@ -53,6 +54,16 @@ void addMove(Board* result, const uint64_t start, const uint64_t end,
         result->eval -= pieceEvaluators[!color][capturedPiece][endIndex];
         result->hash ^= tableHash      [!color][capturedPiece][endIndex];
     }
+
+    // handle en passant capture
+    if (startPiece == P && end == result->enPassant) {
+        if (color) {
+            result->pieces[WHITE][P] &= ~result->enPassant >> 8;
+        } else {
+            result->pieces[BLACK][P] &= ~result->enPassant << 8;
+        }
+    }
+
     // Place the moving piece (or promotion)
     result->pieces[color][endPiece] |= end;
     result->colors[color]           |= end;
@@ -101,7 +112,7 @@ void addMove(Board* result, const uint64_t start, const uint64_t end,
 
 int blackKingsideCastle(Board* result) {
     if ((result->castle & BLACK_KINGSIDE) == 0) return 0;// can castle anymore
-    if (result->colors[WHITE] | result->colors[BLACK] & (F8 | G8)) return 0;  // space not free
+    if ((result->colors[WHITE] | result->colors[BLACK]) & (F8 | G8)) return 0;  // space not free
     if (canBeAttacked(E8 |F8 | G8, result, BLACK)) return 0;  // check if space is free
 
     addMove(result, E8, G8, K, K, NO_PIECE, BLACK, __builtin_ctzll(E8), __builtin_ctzll(G8));
@@ -111,7 +122,7 @@ int blackKingsideCastle(Board* result) {
 }
 int blackQueensideCastle(Board* result) {
     if ((result->castle & BLACK_QUEENSIDE) == 0) return 0;// can castle anymore
-    if (result->colors[WHITE] | result->colors[BLACK] & (D8 | C8 | B8)) return 0;  // space not free
+    if ((result->colors[WHITE] | result->colors[BLACK]) & (D8 | C8 | B8)) return 0;  // space not free
     if (canBeAttacked(E8 | D8 | C8, result, BLACK)) return 0;  // check if space is free
 
     addMove(result, E8, C8, K, K, NO_PIECE, BLACK, __builtin_ctzll(E8), __builtin_ctzll(C8));
@@ -121,21 +132,21 @@ int blackQueensideCastle(Board* result) {
 }
 int whiteKingsideCastle(Board* result) {
     if ((result->castle & WHITE_KINGSIDE) == 0) return 0;// can castle anymore
-    if (result->colors[WHITE] | result->colors[BLACK] & (F1 | G1)) return 0;  // space not free
+    if ((result->colors[WHITE] | result->colors[BLACK]) & (F1 | G1)) return 0;  // space not free
     if (canBeAttacked(E1 | F1 | G1, result, WHITE)) return 0;  // check if space is free
 
-    addMove(result, E1, G1, K, K, NO_PIECE, BLACK, __builtin_ctzll(E1), __builtin_ctzll(G1));
-    addMove(result, H1, F1, R, R, NO_PIECE, BLACK, __builtin_ctzll(H1), __builtin_ctzll(F1));
+    addMove(result, E1, G1, K, K, NO_PIECE, WHITE, __builtin_ctzll(E1), __builtin_ctzll(G1));
+    addMove(result, H1, F1, R, R, NO_PIECE, WHITE, __builtin_ctzll(H1), __builtin_ctzll(F1));
     result->hash ^= colorHash;  //corrections
     return 1;
 }
 int whiteQueensideCastle(Board* result) {
     if ((result->castle & WHITE_QUEENSIDE) == 0) return 0;// can castle anymore
-    if (result->colors[WHITE] | result->colors[BLACK] & (D1 | C1 | B1)) return 0;  // space not free
+    if ((result->colors[WHITE] | result->colors[BLACK]) & (D1 | C1 | B1)) return 0;  // space not free
     if (canBeAttacked(E1 | D1 | C1, result, WHITE)) return 0;  // check if space is free
 
-    addMove(result, E1, C1, K, K, NO_PIECE, BLACK, __builtin_ctzll(E1), __builtin_ctzll(C1));
-    addMove(result, A1, D1, R, R, NO_PIECE, BLACK, __builtin_ctzll(A1), __builtin_ctzll(D1));
+    addMove(result, E1, C1, K, K, NO_PIECE, WHITE, __builtin_ctzll(E1), __builtin_ctzll(C1));
+    addMove(result, A1, D1, R, R, NO_PIECE, WHITE, __builtin_ctzll(A1), __builtin_ctzll(D1));
     result->hash ^= colorHash;  //corrections
     return 1;
 }
@@ -164,27 +175,20 @@ int generateDetailedMoves(const Board* board, Board results[], const int color, 
                 const int capturedPiece = getPiece(board, end, !color);
 
                 const int promotionPieces[4] = {R, N, B, Q};
-                const int promotionEnds[4] = {64 + R, 64 + N, 64 + B, 64 + Q};
                 const int* endPieces;
-                const int* moveEnds;
                 int nrOfMoves;
 
                 if (startPiece == P && end & (RANK8 | RANK1)) {
                     nrOfMoves = 4;
                     endPieces = promotionPieces;
-                    moveEnds = promotionEnds;
                 }
                 else {
                     nrOfMoves = 1;
                     endPieces = &startPiece;
-                    moveEnds = &endIndex;
                 }
 
                 for (int i  = 0; i < nrOfMoves; i++) {
                     const int endPiece = endPieces[i];
-
-                    starts[moveCount] = startIndex;
-                    ends[moveCount]   = moveEnds[i];
 
                     Board* result = &results[moveCount];
                     *result = *board;
@@ -206,13 +210,29 @@ int generateDetailedMoves(const Board* board, Board results[], const int color, 
     results[moveCount + 1] = *board;
 
     if (color) {
-        moveCount += blackKingsideCastle (&results[moveCount]);
-        moveCount += blackQueensideCastle(&results[moveCount]);
+        if (blackKingsideCastle (&results[moveCount])) {
+            starts[moveCount] = __builtin_ctzll(E8);
+            ends[moveCount]   = __builtin_ctzll(G8);
+            moveCount++;
+        }
+        if (blackQueensideCastle(&results[moveCount])) {
+            starts[moveCount] = __builtin_ctzll(E8);
+            ends[moveCount]   = __builtin_ctzll(C8);
+            moveCount++;
+        }
     }
     else {
-        moveCount += whiteKingsideCastle (&results[moveCount]);
-        moveCount += whiteQueensideCastle(&results[moveCount]);
-    }
+        if (whiteKingsideCastle (&results[moveCount])) {
+            starts[moveCount] = __builtin_ctzll(E1);
+            ends[moveCount]   = __builtin_ctzll(G1);
+            moveCount++;
+        };
+        if (whiteQueensideCastle(&results[moveCount])) {
+            starts[moveCount] = __builtin_ctzll(E1);
+            ends[moveCount]   = __builtin_ctzll(C1);
+            moveCount++;
+        }
+    }  // todo, something goes wrong with castling
     return moveCount;
 }
 

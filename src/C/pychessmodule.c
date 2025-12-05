@@ -12,6 +12,7 @@
 #include "../../include/algorithms.h"
 #include "../../include/zobristHashing.h"
 #include "../../include/boardEvaluation.h"
+#include "../../include/moveGeneration.h"
 
 #include "../../testing/debugTools.h"
 
@@ -195,7 +196,7 @@ direct_search(PyObject *self, PyObject *args)
     Board board = {0};
     if (!convertArgsToBoard(pieces_list, castle_rights_list, en_passant, is_white, &board)) {
         return NULL;
-    };
+    }
     if (!PyBool_Check(is_white)) {
         PyErr_SetString(PyExc_TypeError, "is_white must be a bool");
         return NULL;
@@ -211,10 +212,10 @@ direct_search(PyObject *self, PyObject *args)
     for (int n = 0; n < result.nrOfMoves; n++) {
         const int opposite_color = (color)? 0 : 1;
         PyObject* board_args = convertBoardToArgs(&result.moves[n], opposite_color);
-        PyList_SET_ITEM(moves_list, n, board_args);
+        PyList_SET_ITEM(moves_list,  n, board_args);
         PyList_SET_ITEM(scores_list, n, PyLong_FromLong(result.scores[n]));
         PyList_SET_ITEM(starts_list, n, PyLong_FromLong(result.starts[n]));
-        PyList_SET_ITEM(ends_list, n, PyLong_FromLong(result.ends[n]));
+        PyList_SET_ITEM(ends_list,   n, PyLong_FromLong(result.ends[n]));
     }
 
     PyObject* meta = Py_BuildValue(
@@ -230,6 +231,39 @@ direct_search(PyObject *self, PyObject *args)
     return PySequence_Concat(Py_BuildValue("(OOOO)", moves_list, scores_list, starts_list, ends_list), meta);
 }
 
+static PyObject *
+get_moves(PyObject *self, PyObject *args) {
+    PyObject *pieces_list        = NULL;
+    PyObject *castle_rights_list = NULL;
+    int en_passant               = 0;
+    PyObject *is_white           = NULL;
+
+    if (!PyArg_ParseTuple(args, "OOiO", &pieces_list, &castle_rights_list, &en_passant, &is_white)) {
+        return NULL;
+    }
+    Board board = {0};
+    if (!convertArgsToBoard(pieces_list, castle_rights_list, en_passant, is_white, &board)) {
+        return NULL;
+    }
+    const int color = (is_white == Py_True)? 0 : 1;
+    Board moves[512] = {0};
+    int starts[512] = {0};
+    int ends[512] = {0};
+    const int nrOfMoves = generateDetailedMoves(&board, moves, color, starts, ends);
+
+    PyObject *moves_list = PyList_New(nrOfMoves);
+    PyObject *starts_list = PyList_New(nrOfMoves);
+    PyObject *ends_list = PyList_New(nrOfMoves);
+
+    for (int n = 0; n < nrOfMoves; n++) {
+        const int opposite_color = (color)? 0 : 1;
+        PyObject* board_args = convertBoardToArgs(&moves[n], opposite_color);
+        PyList_SET_ITEM(moves_list,  n, board_args);
+        PyList_SET_ITEM(starts_list, n, PyLong_FromLong(starts[n]));
+        PyList_SET_ITEM(ends_list,   n, PyLong_FromLong(ends[n]));
+    }
+    return Py_BuildValue("(OOO)", moves_list, starts_list, ends_list);
+}
 
 
 
@@ -242,6 +276,12 @@ static PyMethodDef PyChessMethods[] = {
         METH_VARARGS,
         "Call direct_search function"
     },
+        {
+            "get_moves",
+            get_moves,
+            METH_VARARGS,
+            "Call get_moves function"
+        },
     {
         NULL, NULL, 0, NULL
     }
